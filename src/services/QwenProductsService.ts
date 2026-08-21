@@ -8,7 +8,7 @@ type RankedProduct = {
 };
 
 export class QwenProductsService {
-    private normalizeText = (value: string): string => {
+    normalizeSearchText = (value: string): string => {
         return value
             .toLowerCase()
             .replace(/ё/g, "е")
@@ -17,8 +17,8 @@ export class QwenProductsService {
             .trim();
     };
 
-    private tokenize = (value: string): string[] => {
-        return this.normalizeText(value)
+    getSearchTokens = (value: string): string[] => {
+        return this.normalizeSearchText(value)
             .split(" ")
             .filter((token) => token.length >= 2);
     };
@@ -43,7 +43,7 @@ export class QwenProductsService {
     };
 
     getSearchableText = (product: WarehouseProduct): string => {
-        return this.normalizeText(
+        return this.normalizeSearchText(
             [
                 product.name,
                 product.description,
@@ -61,7 +61,7 @@ export class QwenProductsService {
     shouldIncludeDetails = (
         question: string,
     ): boolean => {
-        const questionText = this.normalizeText(question);
+        const questionText = this.normalizeSearchText(question);
 
         return [
             "описание",
@@ -84,8 +84,8 @@ export class QwenProductsService {
         products: WarehouseProduct[],
         question: string,
     ): RankedProduct[] => {
-        const questionText = this.normalizeText(question);
-        const questionTokens = this.tokenize(question);
+        const questionText = this.normalizeSearchText(question);
+        const questionTokens = this.getSearchTokens(question);
 
         return products
             .map((product) => {
@@ -100,21 +100,21 @@ export class QwenProductsService {
 
                 if (
                     product.name &&
-                    questionText.includes(this.normalizeText(product.name))
+                    questionText.includes(this.normalizeSearchText(product.name))
                 ) {
                     score += 8;
                 }
 
                 if (
                     product.article &&
-                    questionText.includes(this.normalizeText(product.article))
+                    questionText.includes(this.normalizeSearchText(product.article))
                 ) {
                     score += 6;
                 }
 
                 if (
                     product.code &&
-                    questionText.includes(this.normalizeText(product.code))
+                    questionText.includes(this.normalizeSearchText(product.code))
                 ) {
                     score += 6;
                 }
