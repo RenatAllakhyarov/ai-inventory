@@ -159,6 +159,7 @@ h2 {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(360px, 430px);
     gap: 14px;
+    align-items: start;
     max-width: 1480px;
     margin: 0 auto;
 }
@@ -176,7 +177,7 @@ h2 {
 .chat-console {
     display: flex;
     flex-direction: column;
-    min-height: 640px;
+    min-height: 0;
     padding: 16px;
 }
 
@@ -373,15 +374,31 @@ h2 {
 
 .chat-feed {
     display: flex;
-    min-height: 280px;
-    flex: 1;
+    min-height: 240px;
+    max-height: clamp(260px, 46vh, 520px);
+    flex: 0 1 auto;
     flex-direction: column;
     gap: 10px;
     margin-bottom: 12px;
     padding: 12px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     border: 1px solid var(--border);
     border-radius: 5px;
     background: #181f1b;
+}
+
+.chat-feed::-webkit-scrollbar {
+    width: 8px;
+}
+
+.chat-feed::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.chat-feed::-webkit-scrollbar-thumb {
+    border-radius: 999px;
+    background: rgba(174, 183, 169, 0.45);
 }
 
 .chat-empty {
@@ -395,17 +412,33 @@ h2 {
 
 .chat-message {
     display: flex;
+    width: fit-content;
+    max-width: min(100%, 34rem);
     flex-direction: column;
-    gap: 8px;
-    padding: 12px;
+    gap: 6px;
+    padding: 10px 11px;
     color: #f4efe3;
     border-left: 3px solid #aeb7a9;
+    border-radius: 5px;
     background: rgba(255, 255, 255, 0.06);
 }
 
 .chat-message p {
-    line-height: 1.55;
+    overflow-wrap: anywhere;
+    line-height: 1.45;
     white-space: pre-wrap;
+}
+
+.chat-message--user {
+    align-self: flex-end;
+    color: #18211d;
+    border-right: 3px solid #9dab96;
+    border-left: 0;
+    background: #d9ddcf;
+}
+
+.chat-message--assistant {
+    align-self: flex-start;
 }
 
 .chat-message--pending {
@@ -414,16 +447,18 @@ h2 {
 }
 
 .chat-message--error {
+    align-self: stretch;
     color: #ffd5ce;
     border-color: var(--danger);
+    background: rgba(163, 58, 47, 0.16);
 }
 
 .chat-controls {
     display: flex;
+    flex: 0 0 auto;
     flex-direction: column;
     gap: 10px;
 }
-
 .chat-controls input {
     width: 100%;
     min-height: 46px;
@@ -496,7 +531,7 @@ select:focus-visible {
     }
 
     .chat-console {
-        min-height: 520px;
+        min-height: 0;
     }
 }
 
@@ -525,6 +560,14 @@ select:focus-visible {
 
     .filter-bar {
         grid-template-columns: 1fr;
+    }
+
+    .chat-feed {
+        max-height: 420px;
+    }
+
+    .chat-message {
+        max-width: 100%;
     }
 
     .section-header {
