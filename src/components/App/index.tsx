@@ -1,4 +1,4 @@
-import { type ReactElement, useEffect, useState } from "react";
+import { type ReactElement, useEffect, useRef, useState } from "react";
 
 import "./style.css";
 
@@ -19,6 +19,48 @@ import { WarehouseProvider } from "@services/WarehouseProvider";
 interface WarehouseProductsResponse {
     rows?: WarehouseProduct[];
 }
+
+interface ChatTimelineMessage {
+    id: string;
+    role: "user" | "assistant" | "error";
+    content: string;
+    status?: "pending" | "complete";
+}
+
+let chatMessageCounter = 0;
+
+const createChatMessage = (
+    role: ChatTimelineMessage["role"],
+    content: string,
+    status: ChatTimelineMessage["status"] = "complete",
+): ChatTimelineMessage => {
+    chatMessageCounter += 1;
+
+    return {
+        id: `${Date.now()}-${chatMessageCounter}`,
+        role,
+        content,
+        status,
+    };
+};
+
+const getChatMessageLabel = (
+    message: ChatTimelineMessage,
+): string => {
+    if (message.role === "user") {
+        return "Ты";
+    }
+
+    if (message.role === "error") {
+        return "Ошибка";
+    }
+
+    if (message.status === "pending") {
+        return "Склад думает";
+    }
+
+    return "Ответ склада";
+};
 
 const getPrice = (product: WarehouseProduct): string => {
     const [firstSalePrice] = product.salePrices ?? [];
@@ -62,14 +104,14 @@ const App = (): ReactElement => {
     const [question, setQuestion] =
         useState<string>("");
 
-    const [aiAnswer, setAiAnswer] =
-        useState<string>("");
+    const [chatMessages, setChatMessages] =
+        useState<ChatTimelineMessage[]>([]);
 
     const [isAiLoading, setIsAiLoading] =
         useState<boolean>(false);
 
-    const [aiError, setAiError] =
-        useState<string>("");
+    const chatFeedRef =
+        useRef<HTMLDivElement | null>(null);
 
     const productsWithStock =
         products.filter((product) =>
@@ -148,6 +190,9 @@ const App = (): ReactElement => {
             ? "Локальный каталог готов"
             : "Нет данных для ответа";
 
+    const hasChatMessages =
+        chatMessages.length > 0;
+
     const getProducts = async (): Promise<WarehouseProduct[]> => {
         const data =
             await fetchWarehouseApi<WarehouseProductsResponse>(
@@ -163,11 +208,16 @@ const App = (): ReactElement => {
     };
 
     const askAi = async (): Promise<void> => {
-        if (!question.trim()) {
-            setAiError(
-                "Введите вопрос",
-            );
+        const trimmedQuestion = question.trim();
 
+        if (
+            !trimmedQuestion ||
+            isAiLoading
+        ) {
+            return;
+        }
+
+        if (products.length === 0) {
             return;
         }
 
@@ -175,17 +225,37 @@ const App = (): ReactElement => {
             productsStorage.getProductsFromStorage();
 
         if (cachedProducts.length === 0) {
-            setAiError(
-                "Каталог пуст",
-            );
+            setChatMessages((currentMessages) => [
+                ...currentMessages,
+                createChatMessage(
+                    "error",
+                    "Каталог пуст",
+                ),
+            ]);
 
             return;
         }
 
+        const userMessage =
+            createChatMessage(
+                "user",
+                trimmedQuestion,
+            );
+        const pendingMessage =
+            createChatMessage(
+                "assistant",
+                "Ищу товары в локальном контексте и готовлю ответ...",
+                "pending",
+            );
+
         try {
             setIsAiLoading(true);
-            setAiError("");
-            setAiAnswer("");
+            setQuestion("");
+            setChatMessages((currentMessages) => [
+                ...currentMessages,
+                userMessage,
+                pendingMessage,
+            ]);
 
             warehouseAiContextService.updateProducts(
                 cachedProducts,
@@ -193,11 +263,19 @@ const App = (): ReactElement => {
 
             const answer =
                 await warehouseAiContextService.ask(
-                    question,
+                    trimmedQuestion,
                 );
 
-            setAiAnswer(
-                answer,
+            setChatMessages((currentMessages) =>
+                currentMessages.map((message) =>
+                    message.id === pendingMessage.id
+                        ? {
+                            ...message,
+                            content: answer,
+                            status: "complete",
+                        }
+                        : message,
+                ),
             );
         } catch (error) {
             console.error(
@@ -205,15 +283,23 @@ const App = (): ReactElement => {
                 error,
             );
 
-            if (error instanceof Error) {
-                setAiError(
-                    error.message,
-                );
-            } else {
-                setAiError(
-                    "Неизвестная ошибка Ollama",
-                );
-            }
+            const errorMessage =
+                error instanceof Error
+                    ? error.message
+                    : "Неизвестная ошибка Ollama";
+
+            setChatMessages((currentMessages) =>
+                currentMessages.map((message) =>
+                    message.id === pendingMessage.id
+                        ? {
+                            ...message,
+                            role: "error",
+                            content: errorMessage,
+                            status: "complete",
+                        }
+                        : message,
+                ),
+            );
         } finally {
             setIsAiLoading(false);
         }
@@ -221,8 +307,8 @@ const App = (): ReactElement => {
 
     const resetAiSession = (): void => {
         warehouseAiContextService.resetSession();
-        setAiAnswer("");
-        setAiError("");
+        setQuestion("");
+        setChatMessages([]);
     };
 
     const handleKeyDown = (
@@ -230,11 +316,25 @@ const App = (): ReactElement => {
     ): void => {
         if (
             event.key === "Enter" &&
-            !isAiLoading
+            !isAiLoading &&
+            products.length > 0 &&
+            question.trim()
         ) {
             void askAi();
         }
     };
+
+    useEffect(() => {
+        const chatFeed =
+            chatFeedRef.current;
+
+        if (!chatFeed) {
+            return;
+        }
+
+        chatFeed.scrollTop =
+            chatFeed.scrollHeight;
+    }, [chatMessages]);
 
     useEffect(() => {
         const loadProducts = async (): Promise<void> => {
@@ -652,11 +752,12 @@ const App = (): ReactElement => {
                         </strong>
                     </div>
 
-                    <div className="chat-feed">
+                    <div
+                        className="chat-feed"
+                        ref={chatFeedRef}
+                    >
                         {
-                            !aiAnswer &&
-                            !aiError &&
-                            !isAiLoading &&
+                            !hasChatMessages &&
                             <div className="chat-empty">
                                 <strong>
                                     Спроси по остаткам, ценам или категориям
@@ -669,36 +770,28 @@ const App = (): ReactElement => {
                         }
 
                         {
-                            isAiLoading &&
-                            <div className="chat-message chat-message--pending">
-                                Ищу товары в локальном контексте и готовлю ответ...
-                            </div>
-                        }
+                            chatMessages.map((message) => (
+                                <div
+                                    className={[
+                                        "chat-message",
+                                        `chat-message--${message.role}`,
+                                        message.status === "pending"
+                                            ? "chat-message--pending"
+                                            : "",
+                                    ]
+                                        .filter(Boolean)
+                                        .join(" ")}
+                                    key={message.id}
+                                >
+                                    <span>
+                                        {getChatMessageLabel(message)}
+                                    </span>
 
-                        {
-                            aiAnswer &&
-                            <div className="chat-message">
-                                <span>
-                                    Ответ склада
-                                </span>
-
-                                <p>
-                                    {aiAnswer}
-                                </p>
-                            </div>
-                        }
-
-                        {
-                            aiError &&
-                            <div className="chat-message chat-message--error">
-                                <span>
-                                    Ошибка
-                                </span>
-
-                                <p>
-                                    {aiError}
-                                </p>
-                            </div>
+                                    <p>
+                                        {message.content}
+                                    </p>
+                                </div>
+                            ))
                         }
                     </div>
 
@@ -710,10 +803,6 @@ const App = (): ReactElement => {
                                 setQuestion(
                                     event.target.value,
                                 );
-
-                                if (aiError) {
-                                    setAiError("");
-                                }
                             }}
                             onKeyDown={handleKeyDown}
                             placeholder="Например: что закончилось?"
