@@ -307,6 +307,7 @@ const App = (): ReactElement => {
 
     const resetAiSession = (): void => {
         warehouseAiContextService.resetSession();
+        setQuestion("");
         setChatMessages([]);
     };
 
