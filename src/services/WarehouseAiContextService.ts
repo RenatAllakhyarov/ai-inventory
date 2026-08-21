@@ -9,6 +9,7 @@ import {
     type WarehouseProduct,
 } from "./ProductsStorageService";
 import { QwenProductsService } from "./QwenProductsService";
+import { WarehouseProvider } from "./WarehouseProvider";
 
 const MAX_HISTORY_MESSAGES = 4;
 const ENABLE_EMBEDDING_RETRIEVAL =
@@ -26,6 +27,9 @@ export class WarehouseAiContextService {
 
     private readonly qwenProductsService =
         new QwenProductsService();
+
+    private readonly warehouseProvider =
+        new WarehouseProvider();
 
     private sessionMessages: OllamaChatMessage[] = [];
 
@@ -193,11 +197,14 @@ ${this.qwenProductsService.prepareCompactContext(products, includeDetails)}
         limit: number,
     ): Promise<WarehouseProduct[]> => {
         const keywordProducts =
-            this.qwenProductsService.selectRelevantProducts(
+            this.warehouseProvider.searchProducts(
                 this.products,
-                retrievalText,
-                limit,
-            );
+                {
+                    query: retrievalText,
+                    limit,
+                    sortBy: "relevance",
+                },
+            ).items;
 
         if (!ENABLE_EMBEDDING_RETRIEVAL) {
             return keywordProducts;
