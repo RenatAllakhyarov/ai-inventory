@@ -1,13 +1,11 @@
 const BASE_URL = import.meta.env.VITE_MOYSKLAD_BASE_URL;
 
-export const fetchWarehouseApi = async (
+export const fetchWarehouseApi = async <TResponse>(
     endpoint: string,
     retries = 3,
-): Promise<any> => {
+): Promise<TResponse> => {
     for (let attempt = 1; attempt <= retries; attempt++) {
         try {
-            await new Promise((resolve) => setTimeout(resolve, 3000));
-
             const response = await fetch(`${BASE_URL}${endpoint}`);
 
             if (!response.ok) {
@@ -16,8 +14,8 @@ export const fetchWarehouseApi = async (
                 throw new Error(`Ошибка API ${response.status}: ${errorText}`);
             }
 
-            return response.json();
-        } catch (error) {
+            return await response.json() as TResponse;
+        } catch {
             if (attempt === retries) {
                 throw new Error("Connection lost");
             }
@@ -25,6 +23,8 @@ export const fetchWarehouseApi = async (
             await new Promise((resolve) => setTimeout(resolve, 1000));
         }
     }
+
+    throw new Error("Connection lost");
 };
 
 export const checkMoySkladConnection = async (): Promise<boolean> => {
@@ -32,7 +32,7 @@ export const checkMoySkladConnection = async (): Promise<boolean> => {
         await fetchWarehouseApi("/entity/product?limit=1", 3);
 
         return true;
-    } catch (error) {
+    } catch {
         return false;
     }
 };
