@@ -2,6 +2,7 @@ import {
     fetchOllamaEmbedApi,
     fetchOllamaChatApi,
     type OllamaChatMessage,
+    OLLAMA_EMBEDDING_MODEL,
     WAREHOUSE_SYSTEM_PROMPT,
 } from "@api/OllamaApi";
 
@@ -9,9 +10,15 @@ import {
     type WarehouseProduct,
 } from "./ProductsStorageService";
 import { QwenProductsService } from "./QwenProductsService";
-import { WarehouseProvider } from "./WarehouseProvider";
+import {
+    type WarehouseQueryResult,
+    WarehouseCatalogQueryService,
+} from "./WarehouseCatalogQueryService";
+import { WarehouseIdbStorageService } from "./WarehouseIdbStorageService";
+import { WarehouseRetrievalPlannerService } from "./WarehouseRetrievalPlannerService";
 
 const MAX_HISTORY_MESSAGES = 4;
+const MAX_CONTEXT_PRODUCTS = 25;
 const ENABLE_EMBEDDING_RETRIEVAL =
     import.meta.env.VITE_OLLAMA_EMBEDDINGS_ENABLED === "true";
 
@@ -28,18 +35,21 @@ export class WarehouseAiContextService {
     private readonly qwenProductsService =
         new QwenProductsService();
 
-    private readonly warehouseProvider =
-        new WarehouseProvider();
+    private readonly warehouseCatalogQueryService =
+        new WarehouseCatalogQueryService();
+
+    private readonly warehouseIdbStorageService =
+        new WarehouseIdbStorageService();
+
+    private readonly warehouseRetrievalPlannerService =
+        new WarehouseRetrievalPlannerService();
 
     private sessionMessages: OllamaChatMessage[] = [];
 
     updateProducts = (
         products: WarehouseProduct[],
     ): void => {
-        const nextSignature =
-            this.getProductsSignature(
-                products,
-            );
+        const nextSignature = this.getProductsSignature(products);
 
         if (nextSignature !== this.productsSignature) {
             this.productEmbeddings = [];
@@ -63,61 +73,64 @@ export class WarehouseAiContextService {
         const trimmedQuestion = question.trim();
 
         if (!trimmedQuestion) {
-            throw new Error(
-                "Введите вопрос",
-            );
+            throw new Error("Введите вопрос");
         }
 
         if (this.products.length === 0) {
-            throw new Error(
-                "Каталог пуст",
-            );
+            throw new Error("Каталог пуст");
         }
 
-        const retrievalText =
-            this.getRetrievalText(
-                trimmedQuestion,
-            );
-
+        const retrievalText = this.getRetrievalText(trimmedQuestion);
         const includeDetails =
             this.qwenProductsService.shouldIncludeDetails(
                 trimmedQuestion,
             );
 
-        const productLimit = this.products.length;
+        const retrievalResult = await this.selectWarehouseContext(
+            retrievalText,
+            includeDetails,
+        );
 
-        const relevantProducts =
-            await this.selectRelevantProducts(
-                retrievalText,
-                productLimit,
-            );
+        if (
+            retrievalResult.total === 0 &&
+            retrievalResult.products.length === 0 &&
+            retrievalResult.kind === "lookup"
+        ) {
+            const insufficientAnswer =
+                "В доступном складском индексе не нашлось данных для ответа. Уточни название, категорию, артикул, код или штрихкод.";
 
-        const messages =
-            this.prepareMessages(
-                relevantProducts,
-                trimmedQuestion,
-                includeDetails,
-            );
+            this.sessionMessages = this.trimSessionMessages([
+                ...this.sessionMessages,
+                {
+                    role: "user",
+                    content: trimmedQuestion,
+                },
+                {
+                    role: "assistant",
+                    content: insufficientAnswer,
+                },
+            ]);
 
-        const answer =
-            await fetchOllamaChatApi(
-                messages,
-            );
+            return insufficientAnswer;
+        }
 
-        this.sessionMessages =
-            this.trimSessionMessages(
-                [
-                    ...this.sessionMessages,
-                    {
-                        role: "user",
-                        content: trimmedQuestion,
-                    },
-                    {
-                        role: "assistant",
-                        content: answer,
-                    },
-                ],
-            );
+        const messages = this.prepareMessages(
+            retrievalResult.factsText,
+            trimmedQuestion,
+        );
+        const answer = await fetchOllamaChatApi(messages);
+
+        this.sessionMessages = this.trimSessionMessages([
+            ...this.sessionMessages,
+            {
+                role: "user",
+                content: trimmedQuestion,
+            },
+            {
+                role: "assistant",
+                content: answer,
+            },
+        ]);
 
         return answer;
     };
@@ -125,24 +138,14 @@ export class WarehouseAiContextService {
     private getRetrievalText = (
         question: string,
     ): string => {
-        const recentContext =
-            this.sessionMessages
-                .slice(-MAX_HISTORY_MESSAGES)
-                .map((message) => message.content)
-                .join("\n");
-
-        return [
-            recentContext,
-            question,
-        ]
-            .filter(Boolean)
-            .join("\n");
+        // ВАЖНО: в retrieval идёт только текущий вопрос.
+        // История диалога остаётся в LLM messages, но не загрязняет поиск.
+        return question.trim();
     };
 
     private prepareMessages = (
-        relevantProducts: WarehouseProduct[],
+        warehouseFactsText: string,
         question: string,
-        includeDetails: boolean,
     ): OllamaChatMessage[] => {
         return [
             {
@@ -151,9 +154,8 @@ export class WarehouseAiContextService {
             },
             {
                 role: "user",
-                content: this.prepareWarehouseContext(
-                    relevantProducts,
-                    includeDetails,
+                content: this.prepareWarehouseFactsContext(
+                    warehouseFactsText,
                 ),
             },
             ...this.sessionMessages.slice(-MAX_HISTORY_MESSAGES),
@@ -164,25 +166,16 @@ export class WarehouseAiContextService {
         ];
     };
 
-    private prepareWarehouseContext = (
-        products: WarehouseProduct[],
-        includeDetails: boolean,
+    private prepareWarehouseFactsContext = (
+        warehouseFactsText: string,
     ): string => {
         return `
-АКТУАЛЬНЫЙ СКЛАДСКОЙ КОНТЕКСТ:
+АКТУАЛЬНЫЕ СКЛАДСКИЕ ФАКТЫ:
 
 ВСЕГО ТОВАРОВ В ЛОКАЛЬНОМ КАТАЛОГЕ:
 ${this.products.length}
 
-В ЭТОТ ЗАПРОС ПЕРЕДАНЫ ТОЛЬКО НАИБОЛЕЕ РЕЛЕВАНТНЫЕ ТОВАРЫ:
-${products.length}
-
-ФОРМАТ ТОВАРОВ:
-name | stock | price | category${includeDetails ? " | bounded description" : ""}
-
-ТОВАРЫ:
-
-${this.qwenProductsService.prepareCompactContext(products, includeDetails)}
+${warehouseFactsText}
         `.trim();
     };
 
@@ -192,22 +185,107 @@ ${this.qwenProductsService.prepareCompactContext(products, includeDetails)}
         return messages.slice(-MAX_HISTORY_MESSAGES);
     };
 
-    private selectRelevantProducts = async (
+    private selectWarehouseContext = async (
         retrievalText: string,
-        limit: number,
-    ): Promise<WarehouseProduct[]> => {
-        const keywordProducts =
-            this.warehouseProvider.searchProducts(
+        includeDetails: boolean,
+    ): Promise<WarehouseQueryResult> => {
+        const limit = Math.min(
+            this.products.length,
+            MAX_CONTEXT_PRODUCTS,
+        );
+
+        // 1. Сначала быстрые детерминированные запросы.
+        const deterministicPlan =
+            this.warehouseCatalogQueryService.detectDeterministicPlan(
+                retrievalText,
+            );
+
+        if (deterministicPlan) {
+            return this.warehouseCatalogQueryService.executePlan(
+                deterministicPlan,
                 this.products,
+            );
+        }
+
+        // 2. Затем даём planner'у выделить именно складской запрос.
+        //    Он особенно полезен для фильтров по цене/остатку и агрегатов.
+        try {
+            const retrievalPlan =
+                await this.warehouseRetrievalPlannerService.planRetrieval(
+                    retrievalText,
+                );
+
+            if (retrievalPlan) {
+                const plannedResult =
+                    await this.warehouseCatalogQueryService.executePlan(
+                        retrievalPlan.type === "lookup"
+                            ? {
+                                ...retrievalPlan,
+                                limit: retrievalPlan.limit ?? limit,
+                                includeDescription:
+                                    includeDetails ||
+                                    Boolean(
+                                        retrievalPlan.includeDescription,
+                                    ),
+                            }
+                            : retrievalPlan,
+                        this.products,
+                    );
+
+                if (
+                    plannedResult.kind === "aggregate" ||
+                    plannedResult.products.length > 0 ||
+                    plannedResult.total > 0
+                ) {
+                    return this.addEmbeddingResultsIfEnabled(
+                        plannedResult,
+                        retrievalText,
+                        limit,
+                    );
+                }
+            }
+        } catch (error) {
+            console.warn(
+                "Warehouse retrieval planner fallback:",
+                error,
+            );
+        }
+
+        // 3. Если planner ничего полезного не дал — строгий lexical fallback.
+        //    Здесь уже нет старого двустороннего substring matching.
+        const lexicalResult =
+            await this.warehouseCatalogQueryService.executePlan(
                 {
+                    type: "lookup",
                     query: retrievalText,
                     limit,
-                    sortBy: "relevance",
+                    sort: {
+                        field: "relevance",
+                        direction: "desc",
+                    },
+                    includeDescription: includeDetails,
                 },
-            ).items;
+                this.products,
+            );
 
-        if (!ENABLE_EMBEDDING_RETRIEVAL) {
-            return keywordProducts;
+        return this.addEmbeddingResultsIfEnabled(
+            lexicalResult,
+            retrievalText,
+            limit,
+        );
+    };
+
+    private addEmbeddingResultsIfEnabled = async (
+        result: WarehouseQueryResult,
+        retrievalText: string,
+        limit: number,
+    ): Promise<WarehouseQueryResult> => {
+        if (
+            result.kind !== "lookup" ||
+            result.products.length === 0 ||
+            !ENABLE_EMBEDDING_RETRIEVAL
+        ) {
+            return result;
         }
 
         try {
@@ -216,19 +294,38 @@ ${this.qwenProductsService.prepareCompactContext(products, includeDetails)}
                     retrievalText,
                     limit,
                 );
-
-            return this.mergeProducts(
-                keywordProducts,
+            const mergedProducts = this.mergeProducts(
+                result.products,
                 embeddingProducts,
                 limit,
             );
+
+            return {
+                ...result,
+                products: mergedProducts,
+                factsText: `
+АКТУАЛЬНЫЙ СКЛАДСКОЙ КОНТЕКСТ:
+ТИП: products.lookup
+ВСЕГО СОВПАДЕНИЙ В ЛОКАЛЬНОМ ИНДЕКСЕ: ${result.total}
+ПЕРЕДАНО ТОВАРОВ: ${mergedProducts.length}
+ФОРМАТ ТОВАРОВ:
+name | stock | price | category${result.includeDescription ? " | bounded description" : ""}
+
+ТОВАРЫ:
+
+${this.qwenProductsService.prepareCompactContext(
+    mergedProducts,
+    result.includeDescription,
+)}
+                `.trim(),
+            };
         } catch (error) {
             console.warn(
                 "Ollama embedding retrieval fallback:",
                 error,
             );
 
-            return keywordProducts;
+            return result;
         }
     };
 
@@ -242,21 +339,23 @@ ${this.qwenProductsService.prepareCompactContext(products, includeDetails)}
             return [];
         }
 
-        const [questionEmbedding] =
-            await fetchOllamaEmbedApi(
-                [retrievalText],
-            );
+        const [questionEmbedding] = await fetchOllamaEmbedApi([
+            retrievalText,
+        ]);
 
         if (!questionEmbedding) {
             return [];
         }
 
+        const productsById = new Map(
+            this.products.map((product) => [product.id, product]),
+        );
+
         return this.productEmbeddings
             .map((productEmbedding) => {
-                const product =
-                    this.products.find(
-                        (item) => item.id === productEmbedding.productId,
-                    );
+                const product = productsById.get(
+                    productEmbedding.productId,
+                );
 
                 return {
                     product,
@@ -280,31 +379,64 @@ ${this.qwenProductsService.prepareCompactContext(products, includeDetails)}
             return;
         }
 
-        const inputs =
-            this.products.map((product) =>
-                this.qwenProductsService.getSearchableText(product),
+        try {
+            const storedEmbeddings =
+                await this.warehouseIdbStorageService.getEmbeddings(
+                    this.productsSignature,
+                );
+
+            if (storedEmbeddings.length > 0) {
+                this.productEmbeddings = storedEmbeddings.map(
+                    (record) => ({
+                        productId: record.productId,
+                        embedding: record.embedding,
+                    }),
+                );
+                return;
+            }
+        } catch (error) {
+            console.warn(
+                "IndexedDB embedding load fallback:",
+                error,
+            );
+        }
+
+        const inputs = this.products.map((product) =>
+            this.qwenProductsService.getSearchableText(product),
+        );
+        const embeddings = await fetchOllamaEmbedApi(inputs);
+
+        this.productEmbeddings = embeddings
+            .map((embedding, index) => {
+                const product = this.products[index];
+                if (!product) {
+                    return null;
+                }
+
+                return {
+                    productId: product.id,
+                    embedding,
+                };
+            })
+            .filter(
+                (item): item is ProductEmbedding => item !== null,
             );
 
-        const embeddings =
-            await fetchOllamaEmbedApi(
-                inputs,
+        try {
+            await this.warehouseIdbStorageService.replaceEmbeddings(
+                this.productEmbeddings.map((record) => ({
+                    ...record,
+                    productSignature: this.productsSignature,
+                    model: OLLAMA_EMBEDDING_MODEL,
+                    updatedAt: Date.now(),
+                })),
             );
-
-        this.productEmbeddings =
-            embeddings
-                .map((embedding, index) => {
-                    const product = this.products[index];
-
-                    if (!product) {
-                        return null;
-                    }
-
-                    return {
-                        productId: product.id,
-                        embedding,
-                    };
-                })
-                .filter((item): item is ProductEmbedding => item !== null);
+        } catch (error) {
+            console.warn(
+                "IndexedDB embedding save fallback:",
+                error,
+            );
+        }
     };
 
     private mergeProducts = (
@@ -314,14 +446,14 @@ ${this.qwenProductsService.prepareCompactContext(products, includeDetails)}
     ): WarehouseProduct[] => {
         const productsById = new Map<string, WarehouseProduct>();
 
-        for (const product of [
-            ...primaryProducts,
-            ...secondaryProducts,
-        ]) {
-            productsById.set(
-                product.id,
-                product,
-            );
+        // Lexical/planner results always stay first.
+        for (const product of primaryProducts) {
+            productsById.set(product.id, product);
+        }
+        for (const product of secondaryProducts) {
+            if (!productsById.has(product.id)) {
+                productsById.set(product.id, product);
+            }
         }
 
         return [...productsById.values()].slice(0, limit);
@@ -336,9 +468,11 @@ ${this.qwenProductsService.prepareCompactContext(products, includeDetails)}
                 product.name,
                 product.description,
                 product.code,
+                product.externalCode,
                 product.article,
                 product.pathName,
                 product.stock,
+                product.salePrices?.[0]?.value,
             ].join(":"))
             .join("|");
     };
@@ -347,11 +481,7 @@ ${this.qwenProductsService.prepareCompactContext(products, includeDetails)}
         left: number[],
         right: number[],
     ): number => {
-        const length = Math.min(
-            left.length,
-            right.length,
-        );
-
+        const length = Math.min(left.length, right.length);
         let dotProduct = 0;
         let leftMagnitude = 0;
         let rightMagnitude = 0;

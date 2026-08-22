@@ -1,5 +1,6 @@
 import { type WarehouseProduct } from "./ProductsStorageService";
 import { QwenProductsService } from "./QwenProductsService";
+import { WarehouseCatalogQueryService } from "./WarehouseCatalogQueryService";
 
 export type WarehouseSortBy =
     "name" |
@@ -55,6 +56,9 @@ export class WarehouseProvider {
     private readonly qwenProductsService =
         new QwenProductsService();
 
+    private readonly warehouseCatalogQueryService =
+        new WarehouseCatalogQueryService();
+
     searchProducts = (
         products: WarehouseProduct[],
         params: WarehouseSearchParams = {},
@@ -98,6 +102,38 @@ export class WarehouseProvider {
             limit,
             offset,
         };
+    };
+
+    searchProductsFromStorage = async (
+        params: WarehouseSearchParams = {},
+        fallbackProducts: WarehouseProduct[] = [],
+    ): Promise<WarehouseSearchResult> => {
+        try {
+            const result =
+                await this.warehouseCatalogQueryService.executePlan(
+                    this.warehouseCatalogQueryService.createLookupPlan(
+                        params,
+                    ),
+                    fallbackProducts,
+                );
+
+            return {
+                items: result.products,
+                total: result.total,
+                limit: result.limit,
+                offset: result.offset,
+            };
+        } catch (error) {
+            console.warn(
+                "Indexed warehouse search fallback:",
+                error,
+            );
+        }
+
+        return this.searchProducts(
+            fallbackProducts,
+            params,
+        );
     };
 
     private applyStructuredFilters = (
