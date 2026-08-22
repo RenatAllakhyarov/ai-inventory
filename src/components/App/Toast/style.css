@@ -14,6 +14,7 @@
 
 .toast {
     --toast-rail: #aeb7a9;
+    --toast-surface: #18211d;
     display: flex;
     gap: 12px;
     align-items: flex-start;
@@ -22,11 +23,8 @@
     color: #f5f1e7;
     border: 1px solid rgba(245, 241, 231, 0.16);
     border-left: 4px solid var(--toast-rail);
-    border-radius: 7px;
-    background:
-        linear-gradient(135deg, rgba(255, 255, 255, 0.08), transparent 58%),
-        rgba(18, 24, 21, 0.96);
-    box-shadow: 0 16px 34px rgba(0, 0, 0, 0.34);
+    border-radius: var(--radius, 5px);
+    background: var(--toast-surface);
     pointer-events: auto;
     animation: toast-in 180ms ease-out;
 }
@@ -102,7 +100,7 @@
     padding: 3px;
     color: #d8ded4;
     border: 0;
-    border-radius: 4px;
+    border-radius: var(--radius-tight, 4px);
     background: transparent;
 }
 

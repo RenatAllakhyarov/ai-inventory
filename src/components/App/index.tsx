@@ -125,6 +125,9 @@ const App = (): ReactElement => {
     const [products, setProducts] =
         useState<WarehouseProduct[]>([]);
 
+    const [isCatalogLoading, setIsCatalogLoading] =
+        useState<boolean>(true);
+
     const [searchResult, setSearchResult] =
         useState<WarehouseSearchResult>(
             createEmptySearchResult,
@@ -238,12 +241,16 @@ const App = (): ReactElement => {
                 : "danger";
 
     const catalogLabel =
-        products.length > 0
+        isCatalogLoading
+            ? "Загрузка"
+            : products.length > 0
             ? `${products.length} товаров`
             : "Каталог пуст";
 
     const aiContextLabel =
-        products.length > 0
+        isCatalogLoading
+            ? "Готовим локальный каталог"
+            : products.length > 0
             ? "Локальный каталог готов"
             : "Нет данных для ответа";
 
@@ -627,6 +634,8 @@ const App = (): ReactElement => {
                         : "Неизвестная ошибка загрузки склада.",
                     durationMs: 6500,
                 });
+            } finally {
+                setIsCatalogLoading(false);
             }
         };
 
@@ -963,6 +972,20 @@ const App = (): ReactElement => {
                         </div>
 
                         {
+                            isCatalogLoading &&
+                            <div className="empty-state empty-state--loading">
+                                <strong>
+                                    Загружаем каталог
+                                </strong>
+
+                                <span>
+                                    Проверяем локальные источники и МойСклад.
+                                </span>
+                            </div>
+                        }
+
+                        {
+                            !isCatalogLoading &&
                             products.length === 0 &&
                             <div className="empty-state">
                                 <strong>
