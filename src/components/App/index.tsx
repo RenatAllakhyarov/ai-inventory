@@ -14,7 +14,11 @@ import {
     type WarehouseProduct,
 } from "@services/ProductsStorageService";
 import { WarehouseAiContextService } from "@services/WarehouseAiContextService";
-import { WarehouseProvider } from "@services/WarehouseProvider";
+import { WarehouseIdbStorageService } from "@services/WarehouseIdbStorageService";
+import {
+    WarehouseProvider,
+    type WarehouseSearchResult,
+} from "@services/WarehouseProvider";
 
 interface WarehouseProductsResponse {
     rows?: WarehouseProduct[];
@@ -82,8 +86,17 @@ const getStock = (product: WarehouseProduct): string => {
 
 const productsStorage = new ProductsStorageService();
 const warehouseProvider = new WarehouseProvider();
+const warehouseIdbStorageService =
+    new WarehouseIdbStorageService();
 const warehouseAiContextService =
     new WarehouseAiContextService();
+
+const createEmptySearchResult = (): WarehouseSearchResult => ({
+    items: [],
+    total: 0,
+    limit: 0,
+    offset: 0,
+});
 
 const App = (): ReactElement => {
     const [isConnected, setIsConnected] =
@@ -91,6 +104,11 @@ const App = (): ReactElement => {
 
     const [products, setProducts] =
         useState<WarehouseProduct[]>([]);
+
+    const [searchResult, setSearchResult] =
+        useState<WarehouseSearchResult>(
+            createEmptySearchResult,
+        );
 
     const [searchQuery, setSearchQuery] =
         useState<string>("");
@@ -147,20 +165,6 @@ const App = (): ReactElement => {
                     sensitivity: "base",
                 },
             ),
-        );
-
-    const searchResult =
-        warehouseProvider.searchProducts(
-            products,
-            {
-                query: searchQuery,
-                category: selectedCategory || undefined,
-                inStockOnly: showInStockOnly || undefined,
-                sortBy: searchQuery.trim()
-                    ? "relevance"
-                    : "name",
-                sortDirection: "asc",
-            },
         );
 
     const visibleProducts =
@@ -223,8 +227,12 @@ const App = (): ReactElement => {
 
         const cachedProducts =
             productsStorage.getProductsFromStorage();
+        const availableProducts =
+            cachedProducts.length > 0
+                ? cachedProducts
+                : products;
 
-        if (cachedProducts.length === 0) {
+        if (availableProducts.length === 0) {
             setChatMessages((currentMessages) => [
                 ...currentMessages,
                 createChatMessage(
@@ -258,7 +266,7 @@ const App = (): ReactElement => {
             ]);
 
             warehouseAiContextService.updateProducts(
-                cachedProducts,
+                availableProducts,
             );
 
             const answer =
@@ -337,6 +345,35 @@ const App = (): ReactElement => {
     }, [chatMessages]);
 
     useEffect(() => {
+        const searchProducts = async (): Promise<void> => {
+            const result =
+                await warehouseProvider.searchProductsFromStorage(
+                    {
+                        query: searchQuery,
+                        category: selectedCategory || undefined,
+                        inStockOnly: showInStockOnly || undefined,
+                        sortBy: searchQuery.trim()
+                            ? "relevance"
+                            : "name",
+                        sortDirection: "asc",
+                    },
+                    products,
+                );
+
+            setSearchResult(
+                result,
+            );
+        };
+
+        void searchProducts();
+    }, [
+        products,
+        searchQuery,
+        selectedCategory,
+        showInStockOnly,
+    ]);
+
+    useEffect(() => {
         const loadProducts = async (): Promise<void> => {
             try {
                 const savedProducts =
@@ -355,7 +392,48 @@ const App = (): ReactElement => {
                         savedProducts,
                     );
 
+                    try {
+                        await warehouseIdbStorageService.replaceProducts(
+                            savedProducts,
+                        );
+                    } catch (error) {
+                        console.warn(
+                            "IndexedDB hydration fallback:",
+                            error,
+                        );
+                    }
+
                     return;
+                }
+
+                try {
+                    const idbProducts =
+                        await warehouseIdbStorageService.getProducts();
+
+                    if (idbProducts.length > 0) {
+                        console.log(
+                            "Берем каталог из IndexedDB",
+                        );
+
+                        productsStorage.saveProductsToStorage(
+                            idbProducts,
+                        );
+
+                        setProducts(
+                            idbProducts,
+                        );
+
+                        warehouseAiContextService.updateProducts(
+                            idbProducts,
+                        );
+
+                        return;
+                    }
+                } catch (error) {
+                    console.warn(
+                        "IndexedDB load fallback:",
+                        error,
+                    );
                 }
 
                 console.log(
@@ -368,6 +446,17 @@ const App = (): ReactElement => {
                 productsStorage.saveProductsToStorage(
                     data,
                 );
+
+                try {
+                    await warehouseIdbStorageService.replaceProducts(
+                        data,
+                    );
+                } catch (error) {
+                    console.warn(
+                        "IndexedDB sync fallback:",
+                        error,
+                    );
+                }
 
                 setProducts(
                     data,
@@ -428,6 +517,17 @@ const App = (): ReactElement => {
                 productsStorage.saveProductsToStorage(
                     freshProducts,
                 );
+
+                try {
+                    await warehouseIdbStorageService.replaceProducts(
+                        freshProducts,
+                    );
+                } catch (error) {
+                    console.warn(
+                        "IndexedDB periodic sync fallback:",
+                        error,
+                    );
+                }
 
                 setProducts(
                     freshProducts,
