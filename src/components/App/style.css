@@ -11,9 +11,7 @@
 body {
     margin: 0;
     min-width: 320px;
-    background:
-        linear-gradient(135deg, rgba(187, 204, 189, 0.08), transparent 34%),
-        #111714;
+    background: #111714;
 }
 
 button,
@@ -26,6 +24,7 @@ select {
     --shell: #111714;
     --panel: #f2f0e8;
     --surface: #fbfaf4;
+    --surface-raised: #fffdf6;
     --surface-muted: #e4e0d4;
     --border: #c7c0b0;
     --border-strong: #86806f;
@@ -36,17 +35,11 @@ select {
     --danger: #a33a2f;
     --accent: #526a5b;
     --row-hover: #ece7db;
+    --radius: 5px;
+    --radius-tight: 4px;
     min-height: 100vh;
     padding: 18px;
-    background:
-        repeating-linear-gradient(
-            90deg,
-            rgba(255, 255, 255, 0.025) 0,
-            rgba(255, 255, 255, 0.025) 1px,
-            transparent 1px,
-            transparent 38px
-        ),
-        var(--shell);
+    background: var(--shell);
     animation: shell-in 220ms ease-out;
 }
 
@@ -64,7 +57,7 @@ select {
 .inventory-workspace,
 .chat-console {
     border: 1px solid var(--border);
-    border-radius: 6px;
+    border-radius: var(--radius);
 }
 
 .brand-block {
@@ -199,7 +192,7 @@ h2 {
     padding: 7px 9px;
     color: var(--text);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius-tight);
     background: var(--surface);
     font-size: 12px;
     font-weight: 700;
@@ -219,7 +212,7 @@ h2 {
     gap: 8px;
     padding: 12px;
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius);
     background: var(--surface);
 }
 
@@ -241,10 +234,8 @@ h2 {
     margin-bottom: 14px;
     padding: 10px;
     border: 1px solid var(--border);
-    border-radius: 5px;
-    background:
-        linear-gradient(135deg, rgba(82, 106, 91, 0.1), transparent 54%),
-        var(--surface);
+    border-radius: var(--radius);
+    background: var(--surface);
 }
 
 .filter-field {
@@ -270,8 +261,8 @@ h2 {
     padding: 0 10px;
     color: var(--text);
     border: 1px solid var(--border);
-    border-radius: 5px;
-    background: #fffdf6;
+    border-radius: var(--radius);
+    background: var(--surface-raised);
 }
 
 .stock-toggle {
@@ -281,8 +272,8 @@ h2 {
     align-items: center;
     padding: 0 10px;
     border: 1px solid var(--border);
-    border-radius: 5px;
-    background: #fffdf6;
+    border-radius: var(--radius);
+    background: var(--surface-raised);
 }
 
 .stock-toggle input {
@@ -294,7 +285,7 @@ h2 {
 .product-table {
     overflow: hidden;
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius);
     background: var(--surface);
 }
 
@@ -349,6 +340,14 @@ h2 {
     color: var(--muted);
 }
 
+.empty-state--loading strong::after {
+    content: "";
+    display: inline-block;
+    width: 1.2em;
+    text-align: left;
+    animation: loading-dots 1.4s steps(4, end) infinite;
+}
+
 .empty-state strong,
 .chat-empty strong {
     color: var(--text);
@@ -362,7 +361,7 @@ h2 {
     margin-bottom: 12px;
     padding: 10px;
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius);
     background: var(--surface);
 }
 
@@ -384,7 +383,7 @@ h2 {
     overflow-y: auto;
     overscroll-behavior: contain;
     border: 1px solid var(--border);
-    border-radius: 5px;
+    border-radius: var(--radius);
     background: #181f1b;
 }
 
@@ -419,7 +418,7 @@ h2 {
     padding: 10px 11px;
     color: #f4efe3;
     border-left: 3px solid #aeb7a9;
-    border-radius: 5px;
+    border-radius: var(--radius);
     background: rgba(255, 255, 255, 0.06);
 }
 
@@ -465,7 +464,7 @@ h2 {
     padding: 0 12px;
     color: var(--text);
     border: 1px solid var(--border-strong);
-    border-radius: 5px;
+    border-radius: var(--radius);
     background: var(--surface);
 }
 
@@ -479,14 +478,14 @@ button {
     min-height: 42px;
     padding: 0 14px;
     border: 1px solid transparent;
-    border-radius: 5px;
+    border-radius: var(--radius);
     cursor: pointer;
     font-weight: 760;
-    transition: transform 140ms ease, border-color 140ms ease, background 140ms ease;
+    transition: border-color 140ms ease, background 140ms ease, color 140ms ease;
 }
 
 button:hover:not(:disabled) {
-    transform: translateY(-1px);
+    border-color: var(--border-strong);
 }
 
 button:disabled {
@@ -499,10 +498,18 @@ button:disabled {
     background: #314f42;
 }
 
+.primary-action:hover:not(:disabled) {
+    background: #2a453a;
+}
+
 .secondary-action {
     color: var(--text);
     border-color: var(--border);
     background: var(--surface);
+}
+
+.secondary-action:hover:not(:disabled) {
+    background: var(--surface-muted);
 }
 
 button:focus-visible,
@@ -521,6 +528,25 @@ select:focus-visible {
     to {
         opacity: 1;
         transform: translateY(0);
+    }
+}
+
+@keyframes loading-dots {
+    0% {
+        content: "";
+    }
+
+    25% {
+        content: ".";
+    }
+
+    50% {
+        content: "..";
+    }
+
+    75%,
+    100% {
+        content: "...";
     }
 }
 

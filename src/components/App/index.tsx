@@ -1,4 +1,10 @@
-import { type ReactElement, useEffect, useRef, useState } from "react";
+import {
+    type ReactElement,
+    useCallback,
+    useEffect,
+    useRef,
+    useState,
+} from "react";
 
 import "./style.css";
 
@@ -13,12 +19,14 @@ import {
     ProductsStorageService,
     type WarehouseProduct,
 } from "@services/ProductsStorageService";
+import ToastViewport from "./Toast";
 import { WarehouseAiContextService } from "@services/WarehouseAiContextService";
 import { WarehouseIdbStorageService } from "@services/WarehouseIdbStorageService";
 import {
     WarehouseProvider,
     type WarehouseSearchResult,
 } from "@services/WarehouseProvider";
+import { type ToastMessage } from "../../types";
 
 interface WarehouseProductsResponse {
     rows?: WarehouseProduct[];
@@ -32,6 +40,7 @@ interface ChatTimelineMessage {
 }
 
 let chatMessageCounter = 0;
+let toastMessageCounter = 0;
 
 const createChatMessage = (
     role: ChatTimelineMessage["role"],
@@ -45,6 +54,17 @@ const createChatMessage = (
         role,
         content,
         status,
+    };
+};
+
+const createToastMessage = (
+    toast: Omit<ToastMessage, "id">,
+): ToastMessage => {
+    toastMessageCounter += 1;
+
+    return {
+        ...toast,
+        id: `toast-${Date.now()}-${toastMessageCounter}`,
     };
 };
 
@@ -105,6 +125,9 @@ const App = (): ReactElement => {
     const [products, setProducts] =
         useState<WarehouseProduct[]>([]);
 
+    const [isCatalogLoading, setIsCatalogLoading] =
+        useState<boolean>(true);
+
     const [searchResult, setSearchResult] =
         useState<WarehouseSearchResult>(
             createEmptySearchResult,
@@ -128,8 +151,41 @@ const App = (): ReactElement => {
     const [isAiLoading, setIsAiLoading] =
         useState<boolean>(false);
 
+    const [toastMessages, setToastMessages] =
+        useState<ToastMessage[]>([]);
+
     const chatFeedRef =
         useRef<HTMLDivElement | null>(null);
+
+    const dismissToast = useCallback((
+        id: string,
+    ): void => {
+        setToastMessages((currentMessages) =>
+            currentMessages.filter((message) => message.id !== id),
+        );
+    }, []);
+
+    const showToast = useCallback((
+        toast: Omit<ToastMessage, "id">,
+    ): void => {
+        setToastMessages((currentMessages) => {
+            const duplicateToast =
+                currentMessages.some((message) =>
+                    message.type === toast.type &&
+                    message.title === toast.title &&
+                    message.message === toast.message,
+                );
+
+            if (duplicateToast) {
+                return currentMessages;
+            }
+
+            return [
+                ...currentMessages,
+                createToastMessage(toast),
+            ].slice(-4);
+        });
+    }, []);
 
     const productsWithStock =
         products.filter((product) =>
@@ -185,12 +241,16 @@ const App = (): ReactElement => {
                 : "danger";
 
     const catalogLabel =
-        products.length > 0
+        isCatalogLoading
+            ? "Загрузка"
+            : products.length > 0
             ? `${products.length} товаров`
             : "Каталог пуст";
 
     const aiContextLabel =
-        products.length > 0
+        isCatalogLoading
+            ? "Готовим локальный каталог"
+            : products.length > 0
             ? "Локальный каталог готов"
             : "Нет данных для ответа";
 
@@ -233,6 +293,12 @@ const App = (): ReactElement => {
                 : products;
 
         if (availableProducts.length === 0) {
+            showToast({
+                type: "error",
+                title: "Каталог недоступен",
+                message: "Нет локальных товаров для ответа склада.",
+            });
+
             setChatMessages((currentMessages) => [
                 ...currentMessages,
                 createChatMessage(
@@ -285,6 +351,12 @@ const App = (): ReactElement => {
                         : message,
                 ),
             );
+
+            showToast({
+                type: "success",
+                title: "Ответ готов",
+                message: "Складской AI добавил ответ в историю чата.",
+            });
         } catch (error) {
             console.error(
                 "Ошибка Ollama:",
@@ -308,15 +380,33 @@ const App = (): ReactElement => {
                         : message,
                 ),
             );
+
+            showToast({
+                type: "error",
+                title: "Ollama не ответила",
+                message: errorMessage,
+                durationMs: 6500,
+            });
         } finally {
             setIsAiLoading(false);
         }
     };
 
     const resetAiSession = (): void => {
+        const hadChatHistory =
+            chatMessages.length > 0;
+
         warehouseAiContextService.resetSession();
         setQuestion("");
         setChatMessages([]);
+
+        if (hadChatHistory) {
+            showToast({
+                type: "info",
+                title: "Новый диалог",
+                message: "История чата очищена, контекст разговора сброшен.",
+            });
+        }
     };
 
     const handleKeyDown = (
@@ -346,23 +436,51 @@ const App = (): ReactElement => {
 
     useEffect(() => {
         const searchProducts = async (): Promise<void> => {
-            const result =
-                await warehouseProvider.searchProductsFromStorage(
-                    {
-                        query: searchQuery,
-                        category: selectedCategory || undefined,
-                        inStockOnly: showInStockOnly || undefined,
-                        sortBy: searchQuery.trim()
-                            ? "relevance"
-                            : "name",
-                        sortDirection: "asc",
-                    },
-                    products,
+            try {
+                const result =
+                    await warehouseProvider.searchProductsFromStorage(
+                        {
+                            query: searchQuery,
+                            category: selectedCategory || undefined,
+                            inStockOnly: showInStockOnly || undefined,
+                            sortBy: searchQuery.trim()
+                                ? "relevance"
+                                : "name",
+                            sortDirection: "asc",
+                        },
+                        products,
+                    );
+
+                setSearchResult(
+                    result,
+                );
+            } catch (error) {
+                console.warn(
+                    "Warehouse search failed:",
+                    error,
                 );
 
-            setSearchResult(
-                result,
-            );
+                showToast({
+                    type: "warning",
+                    title: "Поиск работает через память",
+                    message: "Локальный индекс недоступен, но каталог остается на экране.",
+                });
+
+                setSearchResult(
+                    warehouseProvider.searchProducts(
+                        products,
+                        {
+                            query: searchQuery,
+                            category: selectedCategory || undefined,
+                            inStockOnly: showInStockOnly || undefined,
+                            sortBy: searchQuery.trim()
+                                ? "relevance"
+                                : "name",
+                            sortDirection: "asc",
+                        },
+                    ),
+                );
+            }
         };
 
         void searchProducts();
@@ -371,6 +489,7 @@ const App = (): ReactElement => {
         searchQuery,
         selectedCategory,
         showInStockOnly,
+        showToast,
     ]);
 
     useEffect(() => {
@@ -392,6 +511,12 @@ const App = (): ReactElement => {
                         savedProducts,
                     );
 
+                    showToast({
+                        type: "info",
+                        title: "Каталог загружен",
+                        message: `Взяли ${savedProducts.length} товаров из localStorage.`,
+                    });
+
                     try {
                         await warehouseIdbStorageService.replaceProducts(
                             savedProducts,
@@ -401,6 +526,12 @@ const App = (): ReactElement => {
                             "IndexedDB hydration fallback:",
                             error,
                         );
+
+                        showToast({
+                            type: "warning",
+                            title: "IndexedDB недоступен",
+                            message: "Каталог открыт из localStorage, индекс пересоберем позже.",
+                        });
                     }
 
                     return;
@@ -427,6 +558,12 @@ const App = (): ReactElement => {
                             idbProducts,
                         );
 
+                        showToast({
+                            type: "success",
+                            title: "Каталог загружен",
+                            message: `Взяли ${idbProducts.length} товаров из IndexedDB.`,
+                        });
+
                         return;
                     }
                 } catch (error) {
@@ -434,6 +571,12 @@ const App = (): ReactElement => {
                         "IndexedDB load fallback:",
                         error,
                     );
+
+                    showToast({
+                        type: "warning",
+                        title: "IndexedDB недоступен",
+                        message: "Пробуем загрузить свежий каталог из МоегоСклада.",
+                    });
                 }
 
                 console.log(
@@ -447,16 +590,28 @@ const App = (): ReactElement => {
                     data,
                 );
 
+                showToast({
+                    type: "success",
+                    title: "Каталог загружен",
+                    message: `Получили ${data.length} товаров из МоегоСклада.`,
+                });
+
                 try {
                     await warehouseIdbStorageService.replaceProducts(
                         data,
                     );
                 } catch (error) {
-                    console.warn(
-                        "IndexedDB sync fallback:",
-                        error,
-                    );
-                }
+                        console.warn(
+                            "IndexedDB sync fallback:",
+                            error,
+                        );
+
+                        showToast({
+                            type: "warning",
+                            title: "Индекс не обновлен",
+                            message: "Каталог загружен, но IndexedDB временно недоступен.",
+                        });
+                    }
 
                 setProducts(
                     data,
@@ -470,11 +625,22 @@ const App = (): ReactElement => {
                     "Ошибка загрузки товаров:",
                     error,
                 );
+
+                showToast({
+                    type: "error",
+                    title: "Каталог не загрузился",
+                    message: error instanceof Error
+                        ? error.message
+                        : "Неизвестная ошибка загрузки склада.",
+                    durationMs: 6500,
+                });
+            } finally {
+                setIsCatalogLoading(false);
             }
         };
 
         void loadProducts();
-    }, []);
+    }, [showToast]);
 
     useEffect(() => {
         const checkConnection =
@@ -490,10 +656,19 @@ const App = (): ReactElement => {
                     "MoySklad connection:",
                     result,
                 );
+
+                showToast({
+                    type: result ? "success" : "error",
+                    title: result ? "МойСклад подключен" : "Нет связи с МойСкладом",
+                    message: result
+                        ? "API склада доступен."
+                        : "Показываем локальные данные, если они есть.",
+                    durationMs: result ? 3200 : 6500,
+                });
             };
 
         void checkConnection();
-    }, []);
+    }, [showToast]);
 
     useEffect(() => {
         if (products.length === 0) {
@@ -501,41 +676,69 @@ const App = (): ReactElement => {
         }
 
         const syncProducts = async (): Promise<void> => {
-            const freshProducts =
-                await getProducts();
+            try {
+                const freshProducts =
+                    await getProducts();
 
-            const oldProducts =
-                productsStorage.getProductsFromStorage();
+                const oldProducts =
+                    productsStorage.getProductsFromStorage();
 
-            const changed =
-                productsStorage.compareProducts(
-                    oldProducts,
-                    freshProducts,
-                );
-
-            if (changed) {
-                productsStorage.saveProductsToStorage(
-                    freshProducts,
-                );
-
-                try {
-                    await warehouseIdbStorageService.replaceProducts(
+                const changed =
+                    productsStorage.compareProducts(
+                        oldProducts,
                         freshProducts,
                     );
-                } catch (error) {
-                    console.warn(
-                        "IndexedDB periodic sync fallback:",
-                        error,
+
+                if (changed) {
+                    productsStorage.saveProductsToStorage(
+                        freshProducts,
                     );
+
+                    try {
+                        await warehouseIdbStorageService.replaceProducts(
+                            freshProducts,
+                        );
+                    } catch (error) {
+                        console.warn(
+                            "IndexedDB periodic sync fallback:",
+                            error,
+                        );
+
+                        showToast({
+                            type: "warning",
+                            title: "Индекс не обновлен",
+                            message: "Свежий каталог сохранен локально, но IndexedDB временно недоступен.",
+                        });
+                    }
+
+                    setProducts(
+                        freshProducts,
+                    );
+
+                    warehouseAiContextService.updateProducts(
+                        freshProducts,
+                    );
+
+                    showToast({
+                        type: "success",
+                        title: "Каталог обновлен",
+                        message: `Синхронизация нашла ${freshProducts.length} товаров.`,
+                    });
                 }
-
-                setProducts(
-                    freshProducts,
+            } catch (error) {
+                console.error(
+                    "Ошибка синхронизации товаров:",
+                    error,
                 );
 
-                warehouseAiContextService.updateProducts(
-                    freshProducts,
-                );
+                showToast({
+                    type: "error",
+                    title: "Синхронизация не удалась",
+                    message: error instanceof Error
+                        ? error.message
+                        : "Не удалось обновить складовой каталог.",
+                    durationMs: 6500,
+                });
             }
         };
 
@@ -549,7 +752,10 @@ const App = (): ReactElement => {
         return () => {
             window.clearInterval(intervalId);
         };
-    }, [products.length]);
+    }, [
+        products.length,
+        showToast,
+    ]);
 
     return (
         <main className="warehouse-shell">
@@ -766,6 +972,20 @@ const App = (): ReactElement => {
                         </div>
 
                         {
+                            isCatalogLoading &&
+                            <div className="empty-state empty-state--loading">
+                                <strong>
+                                    Загружаем каталог
+                                </strong>
+
+                                <span>
+                                    Проверяем локальные источники и МойСклад.
+                                </span>
+                            </div>
+                        }
+
+                        {
+                            !isCatalogLoading &&
                             products.length === 0 &&
                             <div className="empty-state">
                                 <strong>
@@ -939,6 +1159,11 @@ const App = (): ReactElement => {
                     </div>
                 </aside>
             </section>
+
+            <ToastViewport
+                messages={toastMessages}
+                onDismiss={dismissToast}
+            />
         </main>
     );
 };
