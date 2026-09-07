@@ -1,32 +1,18 @@
+import { DEFAULT_TOAST_DURATION_MS } from "@utils/constants";
 import { useEffect, type ReactElement } from "react";
-
+import { type ToastMessage } from "../../types";
 import "./style.css";
 
-import { type ToastMessage } from "../../../types";
-
-interface ToastViewportProps {
-    messages: ToastMessage[];
-    onDismiss: (id: string) => void;
-}
-
-interface ToastItemProps {
+interface IToastItemProps {
     toast: ToastMessage;
     onDismiss: (id: string) => void;
 }
 
-const DEFAULT_TOAST_DURATION_MS = 4200;
-
-const getToastRole = (
-    type: ToastMessage["type"],
-): "alert" | "status" => {
-    return type === "error"
-        ? "alert"
-        : "status";
+const getToastRole = (type: ToastMessage["type"]): "alert" | "status" => {
+    return type === "error" ? "alert" : "status";
 };
 
-const getToastLabel = (
-    type: ToastMessage["type"],
-): string => {
+const getToastLabel = (type: ToastMessage["type"]): string => {
     if (type === "success") {
         return "Успешно";
     }
@@ -46,32 +32,20 @@ const getToastLabel = (
     return "Информация";
 };
 
-const ToastItem = ({
-    toast,
-    onDismiss,
-}: ToastItemProps): ReactElement => {
+const ToastItem = ({ toast, onDismiss }: IToastItemProps): ReactElement => {
     useEffect(() => {
         if (toast.type === "loading") {
             return;
         }
 
-        const timeoutId =
-            window.setTimeout(
-                () => {
-                    onDismiss(toast.id);
-                },
-                toast.durationMs ?? DEFAULT_TOAST_DURATION_MS,
-            );
+        const timeoutId = window.setTimeout(() => {
+            onDismiss(toast.id);
+        }, toast.durationMs ?? DEFAULT_TOAST_DURATION_MS);
 
         return () => {
             window.clearTimeout(timeoutId);
         };
-    }, [
-        onDismiss,
-        toast.durationMs,
-        toast.id,
-        toast.type,
-    ]);
+    }, [onDismiss, toast.durationMs, toast.id, toast.type]);
 
     return (
         <article
@@ -80,22 +54,16 @@ const ToastItem = ({
             aria-live={toast.type === "error" ? "assertive" : "polite"}
         >
             <div className="toast-content">
-                {
-                    toast.type === "loading" &&
+                {toast.type === "loading" && (
                     <span className="toast-loader" aria-hidden="true" />
-                }
-
+                )}
                 <div className="toast-copy">
                     <span className="toast-kicker">
                         {toast.title ?? getToastLabel(toast.type)}
                     </span>
-
-                    <p className="toast-message">
-                        {toast.message}
-                    </p>
+                    <p className="toast-message">{toast.message}</p>
                 </div>
             </div>
-
             <button
                 type="button"
                 className="toast-close-button"
@@ -124,30 +92,4 @@ const ToastItem = ({
     );
 };
 
-const ToastViewport = ({
-    messages,
-    onDismiss,
-}: ToastViewportProps): ReactElement | null => {
-    if (messages.length === 0) {
-        return null;
-    }
-
-    return (
-        <section
-            className="toast-viewport"
-            aria-label="Уведомления приложения"
-        >
-            {
-                messages.map((toast) => (
-                    <ToastItem
-                        key={toast.id}
-                        toast={toast}
-                        onDismiss={onDismiss}
-                    />
-                ))
-            }
-        </section>
-    );
-};
-
-export default ToastViewport;
+export default ToastItem;

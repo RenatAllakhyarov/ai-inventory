@@ -26,10 +26,12 @@ export class QwenProductsService {
     getBarcode = (product: WarehouseProduct): string => {
         const [firstBarcode] = product.barcodes ?? [];
 
-        return firstBarcode?.ean13 ??
+        return (
+            firstBarcode?.ean13 ??
             firstBarcode?.code128 ??
             firstBarcode?.upc ??
-            "нет";
+            "нет"
+        );
     };
 
     getPrice = (product: WarehouseProduct): string => {
@@ -58,9 +60,7 @@ export class QwenProductsService {
         );
     };
 
-    shouldIncludeDetails = (
-        question: string,
-    ): boolean => {
+    shouldIncludeDetails = (question: string): boolean => {
         const questionText = this.normalizeSearchText(question);
 
         return [
@@ -100,21 +100,27 @@ export class QwenProductsService {
 
                 if (
                     product.name &&
-                    questionText.includes(this.normalizeSearchText(product.name))
+                    questionText.includes(
+                        this.normalizeSearchText(product.name),
+                    )
                 ) {
                     score += 8;
                 }
 
                 if (
                     product.article &&
-                    questionText.includes(this.normalizeSearchText(product.article))
+                    questionText.includes(
+                        this.normalizeSearchText(product.article),
+                    )
                 ) {
                     score += 6;
                 }
 
                 if (
                     product.code &&
-                    questionText.includes(this.normalizeSearchText(product.code))
+                    questionText.includes(
+                        this.normalizeSearchText(product.code),
+                    )
                 ) {
                     score += 6;
                 }
@@ -145,9 +151,7 @@ export class QwenProductsService {
         return products.slice(0, limit);
     };
 
-    prepareContext = (
-        products: WarehouseProduct[],
-    ): string => {
+    prepareContext = (products: WarehouseProduct[]): string => {
         return products
             .map((product, index) => {
                 return `
@@ -187,34 +191,29 @@ ${product.archived ? "да" : "нет"}
 ${product.pathName ?? "нет"}
                 `.trim();
             })
-            .join(
-                "\n\n====================\n\n",
-            );
+            .join("\n\n====================\n\n");
     };
 
     prepareCompactContext = (
         products: WarehouseProduct[],
         includeDetails: boolean,
     ): string => {
-        const rows =
-            products
-                .map((product, index) => {
-                    const row = [
-                        `${index + 1}. name=${product.name ?? "нет"}`,
-                        `stock=${typeof product.stock === "number" ? String(product.stock) : "нет"}`,
-                        `price=${this.getPrice(product)}`,
-                        `category=${product.pathName ?? "нет"}`,
-                    ].join(" | ");
+        const rows = products.map((product, index) => {
+            const row = [
+                `${index + 1}. name=${product.name ?? "нет"}`,
+                `stock=${typeof product.stock === "number" ? String(product.stock) : "нет"}`,
+                `price=${this.getPrice(product)}`,
+                `category=${product.pathName ?? "нет"}`,
+            ].join(" | ");
 
-                    if (!includeDetails) {
-                        return row;
-                    }
+            if (!includeDetails) {
+                return row;
+            }
 
-                    return [
-                        row,
-                        `description=${product.description ?? "нет"}`,
-                    ].join("\n");
-                });
+            return [row, `description=${product.description ?? "нет"}`].join(
+                "\n",
+            );
+        });
 
         return rows.join("\n");
     };

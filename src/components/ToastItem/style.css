@@ -138,6 +138,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+
     .toast,
     .toast-loader {
         animation-duration: 1ms !important;

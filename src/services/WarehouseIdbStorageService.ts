@@ -1,32 +1,30 @@
-import { OLLAMA_EMBEDDING_MODEL } from "@api/OllamaApi";
-
 import { type WarehouseProduct } from "./ProductsStorageService";
 import { QwenProductsService } from "./QwenProductsService";
-
-const DATABASE_NAME = "ai_inventory_warehouse";
-const DATABASE_VERSION = 3;
-
-const PRODUCTS_STORE = "warehouse_products";
-const INDEXED_PRODUCTS_STORE = "warehouse_indexed_products";
-const CATEGORIES_STORE = "warehouse_categories";
-const NAMES_STORE = "warehouse_names";
-const STOCKS_STORE = "warehouse_stocks";
-const PRICES_STORE = "warehouse_prices";
-const DESCRIPTIONS_STORE = "warehouse_descriptions";
-const BARCODES_STORE = "warehouse_barcodes";
-const SEARCH_TERMS_STORE = "warehouse_search_terms";
-const EMBEDDINGS_STORE = "warehouse_embeddings";
-const META_STORE = "warehouse_meta";
-
-const LEGACY_SEARCH_INDEX_STORE = "warehouse_search_index";
+import { OLLAMA_EMBEDDING_MODEL } from "@api/OllamaApi";
+import {
+    BARCODES_STORE,
+    CATEGORIES_STORE,
+    DATABASE_NAME,
+    DATABASE_VERSION,
+    DESCRIPTIONS_STORE,
+    EMBEDDINGS_STORE,
+    INDEXED_PRODUCTS_STORE,
+    LEGACY_SEARCH_INDEX_STORE,
+    META_STORE,
+    NAMES_STORE,
+    PRICES_STORE,
+    PRODUCTS_STORE,
+    SEARCH_TERMS_STORE,
+    STOCKS_STORE,
+} from "@utils/constants";
 
 export type WarehouseSearchField =
-    "name" |
-    "category" |
-    "description" |
-    "article" |
-    "code" |
-    "barcode";
+    | "name"
+    | "category"
+    | "description"
+    | "article"
+    | "code"
+    | "barcode";
 
 export interface WarehouseIndexedProductRecord {
     id: string;
@@ -134,9 +132,7 @@ const requestToPromise = <TValue>(
     });
 };
 
-const transactionToPromise = (
-    transaction: IDBTransaction,
-): Promise<void> => {
+const transactionToPromise = (transaction: IDBTransaction): Promise<void> => {
     return new Promise((resolve, reject) => {
         transaction.oncomplete = () => resolve();
         transaction.onerror = () => reject(transaction.error);
@@ -170,8 +166,7 @@ const createIndexIfMissing = (
 export class WarehouseIdbStorageService {
     private databasePromise?: Promise<IDBDatabase>;
 
-    private readonly qwenProductsService =
-        new QwenProductsService();
+    private readonly qwenProductsService = new QwenProductsService();
 
     open = async (): Promise<IDBDatabase> => {
         if (!("indexedDB" in window)) {
@@ -194,10 +189,7 @@ export class WarehouseIdbStorageService {
                     return;
                 }
 
-                this.upgradeDatabase(
-                    request.result,
-                    request.transaction,
-                );
+                this.upgradeDatabase(request.result, request.transaction);
             };
 
             request.onsuccess = () => {
@@ -228,10 +220,7 @@ export class WarehouseIdbStorageService {
         productId: string,
     ): Promise<WarehouseProduct | undefined> => {
         const database = await this.open();
-        const transaction = database.transaction(
-            PRODUCTS_STORE,
-            "readonly",
-        );
+        const transaction = database.transaction(PRODUCTS_STORE, "readonly");
 
         return requestToPromise(
             transaction.objectStore(PRODUCTS_STORE).get(productId),
@@ -246,20 +235,20 @@ export class WarehouseIdbStorageService {
         }
 
         const database = await this.open();
-        const transaction = database.transaction(
-            PRODUCTS_STORE,
-            "readonly",
-        );
+        const transaction = database.transaction(PRODUCTS_STORE, "readonly");
         const store = transaction.objectStore(PRODUCTS_STORE);
 
         const records = await Promise.all(
-            productIds.map((productId) =>
-                requestToPromise(store.get(productId)) as Promise<WarehouseProduct | undefined>,
+            productIds.map(
+                (productId) =>
+                    requestToPromise(store.get(productId)) as Promise<
+                        WarehouseProduct | undefined
+                    >,
             ),
         );
 
-        return records.filter(
-            (record): record is WarehouseProduct => Boolean(record),
+        return records.filter((record): record is WarehouseProduct =>
+            Boolean(record),
         );
     };
 
@@ -278,18 +267,14 @@ export class WarehouseIdbStorageService {
             SEARCH_TERMS_STORE,
             "readonly",
         );
-        const index = transaction
-            .objectStore(SEARCH_TERMS_STORE)
-            .index("term");
-        const allowedFields = fields?.length
-            ? new Set(fields)
-            : null;
+        const index = transaction.objectStore(SEARCH_TERMS_STORE).index("term");
+        const allowedFields = fields?.length ? new Set(fields) : null;
         const matches = new Map<string, WarehouseTermMatch>();
 
         for (const token of tokens) {
-            const exactRecords = await requestToPromise(
+            const exactRecords = (await requestToPromise(
                 index.getAll(IDBKeyRange.only(token)),
-            ) as WarehouseSearchTermRecord[];
+            )) as WarehouseSearchTermRecord[];
 
             for (const record of exactRecords) {
                 if (allowedFields && !allowedFields.has(record.field)) {
@@ -306,16 +291,11 @@ export class WarehouseIdbStorageService {
                 continue;
             }
 
-            const prefixRecords = await requestToPromise(
+            const prefixRecords = (await requestToPromise(
                 index.getAll(
-                    IDBKeyRange.bound(
-                        token,
-                        `${token}\uffff`,
-                        false,
-                        false,
-                    ),
+                    IDBKeyRange.bound(token, `${token}\uffff`, false, false),
                 ),
-            ) as WarehouseSearchTermRecord[];
+            )) as WarehouseSearchTermRecord[];
 
             for (const record of prefixRecords) {
                 if (
@@ -348,9 +328,7 @@ export class WarehouseIdbStorageService {
         return this.getAllFromStore<WarehousePriceRecord>(PRICES_STORE);
     };
 
-    replaceProducts = async (
-        products: WarehouseProduct[],
-    ): Promise<void> => {
+    replaceProducts = async (products: WarehouseProduct[]): Promise<void> => {
         const database = await this.open();
         const indexedCatalog = this.createIndexedCatalog(products);
         const transaction = database.transaction(
@@ -444,9 +422,7 @@ export class WarehouseIdbStorageService {
                 this.getAllFromStore<WarehouseIndexedProductRecord>(
                     INDEXED_PRODUCTS_STORE,
                 ),
-                this.getAllFromStore<WarehouseCategoryRecord>(
-                    CATEGORIES_STORE,
-                ),
+                this.getAllFromStore<WarehouseCategoryRecord>(CATEGORIES_STORE),
                 this.getAllFromStore<WarehouseNameRecord>(NAMES_STORE),
                 this.getAllFromStore<WarehouseStockRecord>(STOCKS_STORE),
                 this.getAllFromStore<WarehousePriceRecord>(PRICES_STORE),
@@ -472,22 +448,17 @@ export class WarehouseIdbStorageService {
             };
         };
 
-    getMeta = async <TValue>(
-        name: string,
-    ): Promise<TValue | undefined> => {
+    getMeta = async <TValue>(name: string): Promise<TValue | undefined> => {
         const database = await this.open();
         const transaction = database.transaction(META_STORE, "readonly");
-        const record = await requestToPromise(
+        const record = (await requestToPromise(
             transaction.objectStore(META_STORE).get(name),
-        ) as WarehouseMetaRecord | undefined;
+        )) as WarehouseMetaRecord | undefined;
 
         return record?.value as TValue | undefined;
     };
 
-    setMeta = async (
-        name: string,
-        value: unknown,
-    ): Promise<void> => {
+    setMeta = async (name: string, value: unknown): Promise<void> => {
         const database = await this.open();
         const transaction = database.transaction(META_STORE, "readwrite");
 
@@ -504,30 +475,30 @@ export class WarehouseIdbStorageService {
         productSignature: string,
     ): Promise<WarehouseEmbeddingRecord[]> => {
         const database = await this.open();
-        const transaction = database.transaction(
-            EMBEDDINGS_STORE,
-            "readonly",
-        );
+        const transaction = database.transaction(EMBEDDINGS_STORE, "readonly");
         const store = transaction.objectStore(EMBEDDINGS_STORE);
 
         if (store.indexNames.contains("signatureModel")) {
             return requestToPromise(
-                store.index("signatureModel").getAll(
-                    IDBKeyRange.only([
-                        productSignature,
-                        OLLAMA_EMBEDDING_MODEL,
-                    ]),
-                ),
+                store
+                    .index("signatureModel")
+                    .getAll(
+                        IDBKeyRange.only([
+                            productSignature,
+                            OLLAMA_EMBEDDING_MODEL,
+                        ]),
+                    ),
             ) as Promise<WarehouseEmbeddingRecord[]>;
         }
 
-        const records = await requestToPromise(
+        const records = (await requestToPromise(
             store.getAll(),
-        ) as WarehouseEmbeddingRecord[];
+        )) as WarehouseEmbeddingRecord[];
 
-        return records.filter((record) =>
-            record.productSignature === productSignature &&
-            record.model === OLLAMA_EMBEDDING_MODEL,
+        return records.filter(
+            (record) =>
+                record.productSignature === productSignature &&
+                record.model === OLLAMA_EMBEDDING_MODEL,
         );
     };
 
@@ -535,10 +506,7 @@ export class WarehouseIdbStorageService {
         records: WarehouseEmbeddingRecord[],
     ): Promise<void> => {
         const database = await this.open();
-        const transaction = database.transaction(
-            EMBEDDINGS_STORE,
-            "readwrite",
-        );
+        const transaction = database.transaction(EMBEDDINGS_STORE, "readwrite");
         const store = transaction.objectStore(EMBEDDINGS_STORE);
 
         store.clear();
@@ -552,8 +520,7 @@ export class WarehouseIdbStorageService {
     createIndexedCatalog = (
         products: WarehouseProduct[],
     ): Omit<WarehouseIndexedCatalogSnapshot, "products"> => {
-        const categoriesById =
-            new Map<string, WarehouseCategoryRecord>();
+        const categoriesById = new Map<string, WarehouseCategoryRecord>();
         const indexedProducts: WarehouseIndexedProductRecord[] = [];
         const names: WarehouseNameRecord[] = [];
         const stocks: WarehouseStockRecord[] = [];
@@ -570,9 +537,7 @@ export class WarehouseIdbStorageService {
                 : undefined;
             const nameId = name ? product.id : undefined;
             const descriptionText = product.description?.trim() ?? "";
-            const descriptionId = descriptionText
-                ? product.id
-                : undefined;
+            const descriptionId = descriptionText ? product.id : undefined;
             const stock = this.getNumericStock(product);
             const price = this.getNumericPrice(product);
 
@@ -593,8 +558,7 @@ export class WarehouseIdbStorageService {
                     original: name,
                     normalized:
                         this.qwenProductsService.normalizeSearchText(name),
-                    tokens:
-                        this.qwenProductsService.getSearchTokens(name),
+                    tokens: this.qwenProductsService.getSearchTokens(name),
                 });
             }
 
@@ -613,10 +577,9 @@ export class WarehouseIdbStorageService {
                         this.qwenProductsService.normalizeSearchText(
                             descriptionText,
                         ),
-                    tokens:
-                        this.qwenProductsService.getSearchTokens(
-                            descriptionText,
-                        ),
+                    tokens: this.qwenProductsService.getSearchTokens(
+                        descriptionText,
+                    ),
                 });
             }
 
@@ -654,11 +617,10 @@ export class WarehouseIdbStorageService {
 
         return {
             indexedProducts,
-            categories: [...categoriesById.values()].sort(
-                (left, right) =>
-                    left.path.localeCompare(right.path, "ru", {
-                        sensitivity: "base",
-                    }),
+            categories: [...categoriesById.values()].sort((left, right) =>
+                left.path.localeCompare(right.path, "ru", {
+                    sensitivity: "base",
+                }),
             ),
             names,
             stocks,
@@ -684,12 +646,9 @@ export class WarehouseIdbStorageService {
         database: IDBDatabase,
         transaction: IDBTransaction,
     ): void => {
-        const productsStore = getStore(
-            transaction,
-            database,
-            PRODUCTS_STORE,
-            { keyPath: "id" },
-        );
+        const productsStore = getStore(transaction, database, PRODUCTS_STORE, {
+            keyPath: "id",
+        });
         const indexedProductsStore = getStore(
             transaction,
             database,
@@ -715,43 +674,26 @@ export class WarehouseIdbStorageService {
         );
         createIndexIfMissing(categoriesStore, "parentId", "parentId");
 
-        const namesStore = getStore(
-            transaction,
-            database,
-            NAMES_STORE,
-            { keyPath: "id" },
-        );
+        const namesStore = getStore(transaction, database, NAMES_STORE, {
+            keyPath: "id",
+        });
         createIndexIfMissing(namesStore, "normalized", "normalized");
 
-        const stocksStore = getStore(
-            transaction,
-            database,
-            STOCKS_STORE,
-            { keyPath: "productId" },
-        );
+        const stocksStore = getStore(transaction, database, STOCKS_STORE, {
+            keyPath: "productId",
+        });
         createIndexIfMissing(stocksStore, "stock", "stock");
 
-        const pricesStore = getStore(
-            transaction,
-            database,
-            PRICES_STORE,
-            { keyPath: "productId" },
-        );
+        const pricesStore = getStore(transaction, database, PRICES_STORE, {
+            keyPath: "productId",
+        });
         createIndexIfMissing(pricesStore, "price", "price");
 
-        getStore(
-            transaction,
-            database,
-            DESCRIPTIONS_STORE,
-            { keyPath: "id" },
-        );
+        getStore(transaction, database, DESCRIPTIONS_STORE, { keyPath: "id" });
 
-        const barcodesStore = getStore(
-            transaction,
-            database,
-            BARCODES_STORE,
-            { keyPath: "id" },
-        );
+        const barcodesStore = getStore(transaction, database, BARCODES_STORE, {
+            keyPath: "id",
+        });
         createIndexIfMissing(barcodesStore, "barcode", "barcode");
         createIndexIfMissing(barcodesStore, "productId", "productId");
 
@@ -764,11 +706,7 @@ export class WarehouseIdbStorageService {
         createIndexIfMissing(searchTermsStore, "term", "term");
         createIndexIfMissing(searchTermsStore, "productId", "productId");
         createIndexIfMissing(searchTermsStore, "field", "field");
-        createIndexIfMissing(
-            searchTermsStore,
-            "fieldTerm",
-            ["field", "term"],
-        );
+        createIndexIfMissing(searchTermsStore, "fieldTerm", ["field", "term"]);
 
         const embeddingsStore = getStore(
             transaction,
@@ -782,18 +720,12 @@ export class WarehouseIdbStorageService {
             "productSignature",
         );
         createIndexIfMissing(embeddingsStore, "model", "model");
-        createIndexIfMissing(
-            embeddingsStore,
-            "signatureModel",
-            ["productSignature", "model"],
-        );
+        createIndexIfMissing(embeddingsStore, "signatureModel", [
+            "productSignature",
+            "model",
+        ]);
 
-        getStore(
-            transaction,
-            database,
-            META_STORE,
-            { keyPath: "name" },
-        );
+        getStore(transaction, database, META_STORE, { keyPath: "name" });
 
         if (database.objectStoreNames.contains(LEGACY_SEARCH_INDEX_STORE)) {
             database.deleteObjectStore(LEGACY_SEARCH_INDEX_STORE);
@@ -829,9 +761,7 @@ export class WarehouseIdbStorageService {
 
         for (const item of weightedFields) {
             const terms = new Set(
-                this.qwenProductsService.getSearchTokens(
-                    item.value ?? "",
-                ),
+                this.qwenProductsService.getSearchTokens(item.value ?? ""),
             );
 
             for (const term of terms) {
@@ -847,24 +777,16 @@ export class WarehouseIdbStorageService {
         return records;
     };
 
-    private getBarcodes = (
-        product: WarehouseProduct,
-    ): string[] => {
+    private getBarcodes = (product: WarehouseProduct): string[] => {
         return (product.barcodes ?? [])
-            .flatMap((barcode) => [
-                barcode.ean13,
-                barcode.code128,
-                barcode.upc,
-            ])
+            .flatMap((barcode) => [barcode.ean13, barcode.code128, barcode.upc])
             .filter((barcode): barcode is string => Boolean(barcode));
     };
 
     private getNumericStock = (
         product: WarehouseProduct,
     ): number | undefined => {
-        return typeof product.stock === "number"
-            ? product.stock
-            : undefined;
+        return typeof product.stock === "number" ? product.stock : undefined;
     };
 
     private getNumericPrice = (
@@ -877,9 +799,7 @@ export class WarehouseIdbStorageService {
             : undefined;
     };
 
-    private getCategoryName = (
-        categoryPath: string,
-    ): string => {
+    private getCategoryName = (categoryPath: string): string => {
         const parts = categoryPath
             .split("/")
             .map((part) => part.trim())
@@ -903,16 +823,11 @@ export class WarehouseIdbStorageService {
         return this.createEntityId(parts.slice(0, -1).join("/"));
     };
 
-    private createEntityId = (
-        value: string,
-    ): string => {
-        return this.qwenProductsService.normalizeSearchText(value) ||
-            "unknown";
+    private createEntityId = (value: string): string => {
+        return this.qwenProductsService.normalizeSearchText(value) || "unknown";
     };
 
-    private boundDescription = (
-        value: string,
-    ): string => {
+    private boundDescription = (value: string): string => {
         const normalizedValue = value.replace(/\s+/g, " ").trim();
 
         if (normalizedValue.length <= 220) {
@@ -922,21 +837,21 @@ export class WarehouseIdbStorageService {
         return `${normalizedValue.slice(0, 217)}...`;
     };
 
-    private getProductsSignature = (
-        products: WarehouseProduct[],
-    ): string => {
+    private getProductsSignature = (products: WarehouseProduct[]): string => {
         return products
-            .map((product) => [
-                product.id,
-                product.name,
-                product.description,
-                product.code,
-                product.externalCode,
-                product.article,
-                product.pathName,
-                product.stock,
-                product.salePrices?.[0]?.value,
-            ].join(":"))
+            .map((product) =>
+                [
+                    product.id,
+                    product.name,
+                    product.description,
+                    product.code,
+                    product.externalCode,
+                    product.article,
+                    product.pathName,
+                    product.stock,
+                    product.salePrices?.[0]?.value,
+                ].join(":"),
+            )
             .join("|");
     };
 }
