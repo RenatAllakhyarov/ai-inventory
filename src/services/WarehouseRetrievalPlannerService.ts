@@ -1,12 +1,8 @@
 import {
-    fetchOllamaChatApi,
-    type OllamaChatMessage,
-} from "@api/OllamaApi";
-
-import {
     type WarehouseQueryPlan,
     WarehouseCatalogQueryService,
 } from "./WarehouseCatalogQueryService";
+import { fetchOllamaChatApi, type OllamaChatMessage } from "@api/OllamaApi";
 
 export class WarehouseRetrievalPlannerService {
     private readonly warehouseCatalogQueryService =
@@ -15,19 +11,14 @@ export class WarehouseRetrievalPlannerService {
     planRetrieval = async (
         question: string,
     ): Promise<WarehouseQueryPlan | null> => {
-        const answer =
-            await fetchOllamaChatApi(
-                this.preparePlannerMessages(question),
-            );
-
-        return this.parsePlan(
-            answer,
+        const answer = await fetchOllamaChatApi(
+            this.preparePlannerMessages(question),
         );
+
+        return this.parsePlan(answer);
     };
 
-    parsePlan = (
-        value: string,
-    ): WarehouseQueryPlan | null => {
+    parsePlan = (value: string): WarehouseQueryPlan | null => {
         try {
             return this.warehouseCatalogQueryService.validatePlan(
                 JSON.parse(value) as unknown,

@@ -1,21 +1,19 @@
+import { WarehouseRetrievalPlannerService } from "./WarehouseRetrievalPlannerService";
+import { WarehouseIdbStorageService } from "./WarehouseIdbStorageService";
+import { type WarehouseProduct } from "./ProductsStorageService";
+import { QwenProductsService } from "./QwenProductsService";
+import { WAREHOUSE_SYSTEM_PROMPT } from "@utils/constants";
+import {
+    type WarehouseQueryResult,
+    WarehouseCatalogQueryService,
+} from "./WarehouseCatalogQueryService";
 import {
     fetchOllamaEmbedApi,
     fetchOllamaChatApi,
     type OllamaChatMessage,
     OLLAMA_EMBEDDING_MODEL,
-    WAREHOUSE_SYSTEM_PROMPT,
 } from "@api/OllamaApi";
 
-import {
-    type WarehouseProduct,
-} from "./ProductsStorageService";
-import { QwenProductsService } from "./QwenProductsService";
-import {
-    type WarehouseQueryResult,
-    WarehouseCatalogQueryService,
-} from "./WarehouseCatalogQueryService";
-import { WarehouseIdbStorageService } from "./WarehouseIdbStorageService";
-import { WarehouseRetrievalPlannerService } from "./WarehouseRetrievalPlannerService";
 
 const MAX_HISTORY_MESSAGES = 4;
 const MAX_CONTEXT_PRODUCTS = 25;
@@ -31,24 +29,16 @@ export class WarehouseAiContextService {
     private products: WarehouseProduct[] = [];
     private productsSignature = "";
     private productEmbeddings: ProductEmbedding[] = [];
-
-    private readonly qwenProductsService =
-        new QwenProductsService();
-
+    private readonly qwenProductsService = new QwenProductsService();
     private readonly warehouseCatalogQueryService =
         new WarehouseCatalogQueryService();
-
     private readonly warehouseIdbStorageService =
         new WarehouseIdbStorageService();
-
     private readonly warehouseRetrievalPlannerService =
         new WarehouseRetrievalPlannerService();
-
     private sessionMessages: OllamaChatMessage[] = [];
 
-    updateProducts = (
-        products: WarehouseProduct[],
-    ): void => {
+    updateProducts = (products: WarehouseProduct[]): void => {
         const nextSignature = this.getProductsSignature(products);
 
         if (nextSignature !== this.productsSignature) {
@@ -67,9 +57,7 @@ export class WarehouseAiContextService {
         return [...this.sessionMessages];
     };
 
-    ask = async (
-        question: string,
-    ): Promise<string> => {
+    ask = async (question: string): Promise<string> => {
         const trimmedQuestion = question.trim();
 
         if (!trimmedQuestion) {
@@ -82,9 +70,7 @@ export class WarehouseAiContextService {
 
         const retrievalText = this.getRetrievalText(trimmedQuestion);
         const includeDetails =
-            this.qwenProductsService.shouldIncludeDetails(
-                trimmedQuestion,
-            );
+            this.qwenProductsService.shouldIncludeDetails(trimmedQuestion);
 
         const retrievalResult = await this.selectWarehouseContext(
             retrievalText,
@@ -135,11 +121,7 @@ export class WarehouseAiContextService {
         return answer;
     };
 
-    private getRetrievalText = (
-        question: string,
-    ): string => {
-        // ВАЖНО: в retrieval идёт только текущий вопрос.
-        // История диалога остаётся в LLM messages, но не загрязняет поиск.
+    private getRetrievalText = (question: string): string => {
         return question.trim();
     };
 
@@ -154,9 +136,7 @@ export class WarehouseAiContextService {
             },
             {
                 role: "user",
-                content: this.prepareWarehouseFactsContext(
-                    warehouseFactsText,
-                ),
+                content: this.prepareWarehouseFactsContext(warehouseFactsText),
             },
             ...this.sessionMessages.slice(-MAX_HISTORY_MESSAGES),
             {
@@ -189,12 +169,8 @@ ${warehouseFactsText}
         retrievalText: string,
         includeDetails: boolean,
     ): Promise<WarehouseQueryResult> => {
-        const limit = Math.min(
-            this.products.length,
-            MAX_CONTEXT_PRODUCTS,
-        );
+        const limit = Math.min(this.products.length, MAX_CONTEXT_PRODUCTS);
 
-        // 1. Сначала быстрые детерминированные запросы.
         const deterministicPlan =
             this.warehouseCatalogQueryService.detectDeterministicPlan(
                 retrievalText,
@@ -207,8 +183,6 @@ ${warehouseFactsText}
             );
         }
 
-        // 2. Затем даём planner'у выделить именно складской запрос.
-        //    Он особенно полезен для фильтров по цене/остатку и агрегатов.
         try {
             const retrievalPlan =
                 await this.warehouseRetrievalPlannerService.planRetrieval(
@@ -220,14 +194,12 @@ ${warehouseFactsText}
                     await this.warehouseCatalogQueryService.executePlan(
                         retrievalPlan.type === "lookup"
                             ? {
-                                ...retrievalPlan,
-                                limit: retrievalPlan.limit ?? limit,
-                                includeDescription:
-                                    includeDetails ||
-                                    Boolean(
-                                        retrievalPlan.includeDescription,
-                                    ),
-                            }
+                                  ...retrievalPlan,
+                                  limit: retrievalPlan.limit ?? limit,
+                                  includeDescription:
+                                      includeDetails ||
+                                      Boolean(retrievalPlan.includeDescription),
+                              }
                             : retrievalPlan,
                         this.products,
                     );
@@ -245,14 +217,9 @@ ${warehouseFactsText}
                 }
             }
         } catch (error) {
-            console.warn(
-                "Warehouse retrieval planner fallback:",
-                error,
-            );
+            console.warn("Warehouse retrieval planner fallback:", error);
         }
 
-        // 3. Если planner ничего полезного не дал — строгий lexical fallback.
-        //    Здесь уже нет старого двустороннего substring matching.
         const lexicalResult =
             await this.warehouseCatalogQueryService.executePlan(
                 {
@@ -289,11 +256,10 @@ ${warehouseFactsText}
         }
 
         try {
-            const embeddingProducts =
-                await this.selectEmbeddingProducts(
-                    retrievalText,
-                    limit,
-                );
+            const embeddingProducts = await this.selectEmbeddingProducts(
+                retrievalText,
+                limit,
+            );
             const mergedProducts = this.mergeProducts(
                 result.products,
                 embeddingProducts,
@@ -320,10 +286,7 @@ ${this.qwenProductsService.prepareCompactContext(
                 `.trim(),
             };
         } catch (error) {
-            console.warn(
-                "Ollama embedding retrieval fallback:",
-                error,
-            );
+            console.warn("Ollama embedding retrieval fallback:", error);
 
             return result;
         }
@@ -339,9 +302,7 @@ ${this.qwenProductsService.prepareCompactContext(
             return [];
         }
 
-        const [questionEmbedding] = await fetchOllamaEmbedApi([
-            retrievalText,
-        ]);
+        const [questionEmbedding] = await fetchOllamaEmbedApi([retrievalText]);
 
         if (!questionEmbedding) {
             return [];
@@ -353,9 +314,7 @@ ${this.qwenProductsService.prepareCompactContext(
 
         return this.productEmbeddings
             .map((productEmbedding) => {
-                const product = productsById.get(
-                    productEmbedding.productId,
-                );
+                const product = productsById.get(productEmbedding.productId);
 
                 return {
                     product,
@@ -365,10 +324,14 @@ ${this.qwenProductsService.prepareCompactContext(
                     ),
                 };
             })
-            .filter((item): item is {
-                product: WarehouseProduct;
-                score: number;
-            } => Boolean(item.product))
+            .filter(
+                (
+                    item,
+                ): item is {
+                    product: WarehouseProduct;
+                    score: number;
+                } => Boolean(item.product),
+            )
             .sort((left, right) => right.score - left.score)
             .slice(0, limit)
             .map(({ product }) => product);
@@ -386,19 +349,14 @@ ${this.qwenProductsService.prepareCompactContext(
                 );
 
             if (storedEmbeddings.length > 0) {
-                this.productEmbeddings = storedEmbeddings.map(
-                    (record) => ({
-                        productId: record.productId,
-                        embedding: record.embedding,
-                    }),
-                );
+                this.productEmbeddings = storedEmbeddings.map((record) => ({
+                    productId: record.productId,
+                    embedding: record.embedding,
+                }));
                 return;
             }
         } catch (error) {
-            console.warn(
-                "IndexedDB embedding load fallback:",
-                error,
-            );
+            console.warn("IndexedDB embedding load fallback:", error);
         }
 
         const inputs = this.products.map((product) =>
@@ -418,9 +376,7 @@ ${this.qwenProductsService.prepareCompactContext(
                     embedding,
                 };
             })
-            .filter(
-                (item): item is ProductEmbedding => item !== null,
-            );
+            .filter((item): item is ProductEmbedding => item !== null);
 
         try {
             await this.warehouseIdbStorageService.replaceEmbeddings(
@@ -432,10 +388,7 @@ ${this.qwenProductsService.prepareCompactContext(
                 })),
             );
         } catch (error) {
-            console.warn(
-                "IndexedDB embedding save fallback:",
-                error,
-            );
+            console.warn("IndexedDB embedding save fallback:", error);
         }
     };
 
@@ -446,7 +399,6 @@ ${this.qwenProductsService.prepareCompactContext(
     ): WarehouseProduct[] => {
         const productsById = new Map<string, WarehouseProduct>();
 
-        // Lexical/planner results always stay first.
         for (const product of primaryProducts) {
             productsById.set(product.id, product);
         }
@@ -459,28 +411,25 @@ ${this.qwenProductsService.prepareCompactContext(
         return [...productsById.values()].slice(0, limit);
     };
 
-    private getProductsSignature = (
-        products: WarehouseProduct[],
-    ): string => {
+    private getProductsSignature = (products: WarehouseProduct[]): string => {
         return products
-            .map((product) => [
-                product.id,
-                product.name,
-                product.description,
-                product.code,
-                product.externalCode,
-                product.article,
-                product.pathName,
-                product.stock,
-                product.salePrices?.[0]?.value,
-            ].join(":"))
+            .map((product) =>
+                [
+                    product.id,
+                    product.name,
+                    product.description,
+                    product.code,
+                    product.externalCode,
+                    product.article,
+                    product.pathName,
+                    product.stock,
+                    product.salePrices?.[0]?.value,
+                ].join(":"),
+            )
             .join("|");
     };
 
-    private getCosineSimilarity = (
-        left: number[],
-        right: number[],
-    ): number => {
+    private getCosineSimilarity = (left: number[], right: number[]): number => {
         const length = Math.min(left.length, right.length);
         let dotProduct = 0;
         let leftMagnitude = 0;
@@ -499,7 +448,8 @@ ${this.qwenProductsService.prepareCompactContext(
             return 0;
         }
 
-        return dotProduct /
-            (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
+        return (
+            dotProduct / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude))
+        );
     };
 }

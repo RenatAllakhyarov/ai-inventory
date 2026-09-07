@@ -1,13 +1,13 @@
+import { WarehouseCatalogQueryService } from "./WarehouseCatalogQueryService";
 import { type WarehouseProduct } from "./ProductsStorageService";
 import { QwenProductsService } from "./QwenProductsService";
-import { WarehouseCatalogQueryService } from "./WarehouseCatalogQueryService";
 
 export type WarehouseSortBy =
-    "name" |
-    "stock" |
-    "price" |
-    "category" |
-    "relevance";
+    | "name"
+    | "stock"
+    | "price"
+    | "category"
+    | "relevance";
 
 export type WarehouseSortDirection = "asc" | "desc";
 
@@ -39,22 +39,14 @@ interface ScoredProduct {
     index: number;
 }
 
-const compareText = (
-    left: string,
-    right: string,
-): number => {
-    return left.localeCompare(
-        right,
-        "ru",
-        {
-            sensitivity: "base",
-        },
-    );
+const compareText = (left: string, right: string): number => {
+    return left.localeCompare(right, "ru", {
+        sensitivity: "base",
+    });
 };
 
 export class WarehouseProvider {
-    private readonly qwenProductsService =
-        new QwenProductsService();
+    private readonly qwenProductsService = new QwenProductsService();
 
     private readonly warehouseCatalogQueryService =
         new WarehouseCatalogQueryService();
@@ -63,40 +55,22 @@ export class WarehouseProvider {
         products: WarehouseProduct[],
         params: WarehouseSearchParams = {},
     ): WarehouseSearchResult => {
-        const filteredProducts =
-            this.applyStructuredFilters(
-                products,
-                params,
-            );
+        const filteredProducts = this.applyStructuredFilters(products, params);
 
-        const rankedProducts =
-            this.rankProducts(
-                filteredProducts,
-                params.query,
-            );
+        const rankedProducts = this.rankProducts(
+            filteredProducts,
+            params.query,
+        );
 
-        const sortedProducts =
-            this.sortProducts(
-                rankedProducts,
-                params,
-            );
+        const sortedProducts = this.sortProducts(rankedProducts, params);
 
         const total = sortedProducts.length;
-        const offset = Math.max(
-            0,
-            params.offset ?? 0,
-        );
-        const limit = Math.max(
-            0,
-            params.limit ?? total,
-        );
+        const offset = Math.max(0, params.offset ?? 0);
+        const limit = Math.max(0, params.limit ?? total);
 
         return {
             items: sortedProducts
-                .slice(
-                    offset,
-                    offset + limit,
-                )
+                .slice(offset, offset + limit)
                 .map(({ product }) => product),
             total,
             limit,
@@ -109,13 +83,10 @@ export class WarehouseProvider {
         fallbackProducts: WarehouseProduct[] = [],
     ): Promise<WarehouseSearchResult> => {
         try {
-            const result =
-                await this.warehouseCatalogQueryService.executePlan(
-                    this.warehouseCatalogQueryService.createLookupPlan(
-                        params,
-                    ),
-                    fallbackProducts,
-                );
+            const result = await this.warehouseCatalogQueryService.executePlan(
+                this.warehouseCatalogQueryService.createLookupPlan(params),
+                fallbackProducts,
+            );
 
             return {
                 items: result.products,
@@ -124,26 +95,19 @@ export class WarehouseProvider {
                 offset: result.offset,
             };
         } catch (error) {
-            console.warn(
-                "Indexed warehouse search fallback:",
-                error,
-            );
+            console.warn("Indexed warehouse search fallback:", error);
         }
 
-        return this.searchProducts(
-            fallbackProducts,
-            params,
-        );
+        return this.searchProducts(fallbackProducts, params);
     };
 
     private applyStructuredFilters = (
         products: WarehouseProduct[],
         params: WarehouseSearchParams,
     ): WarehouseProduct[] => {
-        const category =
-            this.qwenProductsService.normalizeSearchText(
-                params.category ?? "",
-            );
+        const category = this.qwenProductsService.normalizeSearchText(
+            params.category ?? "",
+        );
 
         return products.filter((product) => {
             if (
@@ -162,8 +126,7 @@ export class WarehouseProvider {
                 return false;
             }
 
-            const stock =
-                this.getNumericStock(product);
+            const stock = this.getNumericStock(product);
 
             if (
                 params.inStockOnly &&
@@ -186,8 +149,7 @@ export class WarehouseProvider {
                 return false;
             }
 
-            const price =
-                this.getNumericPrice(product);
+            const price = this.getNumericPrice(product);
 
             if (
                 typeof params.minPrice === "number" &&
@@ -211,63 +173,61 @@ export class WarehouseProvider {
         products: WarehouseProduct[],
         query?: string,
     ): ScoredProduct[] => {
-        const normalizedQuery =
-            this.qwenProductsService.normalizeSearchText(
-                query ?? "",
-            );
-        const queryTokens =
-            this.qwenProductsService.getSearchTokens(
-                query ?? "",
-            );
+        const normalizedQuery = this.qwenProductsService.normalizeSearchText(
+            query ?? "",
+        );
+        const queryTokens = this.qwenProductsService.getSearchTokens(
+            query ?? "",
+        );
 
-        const scoredProducts =
-            products.map((product, index) => {
-                const searchableText =
-                    this.qwenProductsService.getSearchableText(product);
-                let score = 0;
+        const scoredProducts = products.map((product, index) => {
+            const searchableText =
+                this.qwenProductsService.getSearchableText(product);
+            let score = 0;
 
-                for (const token of queryTokens) {
-                    if (searchableText.includes(token)) {
-                        score += token.length > 4 ? 3 : 2;
-                    }
+            for (const token of queryTokens) {
+                if (searchableText.includes(token)) {
+                    score += token.length > 4 ? 3 : 2;
                 }
+            }
 
-                if (
-                    product.name &&
-                    normalizedQuery.includes(
-                        this.qwenProductsService.normalizeSearchText(product.name),
-                    )
-                ) {
-                    score += 8;
-                }
+            if (
+                product.name &&
+                normalizedQuery.includes(
+                    this.qwenProductsService.normalizeSearchText(product.name),
+                )
+            ) {
+                score += 8;
+            }
 
-                if (
-                    product.article &&
-                    normalizedQuery.includes(
-                        this.qwenProductsService.normalizeSearchText(product.article),
-                    )
-                ) {
-                    score += 6;
-                }
+            if (
+                product.article &&
+                normalizedQuery.includes(
+                    this.qwenProductsService.normalizeSearchText(
+                        product.article,
+                    ),
+                )
+            ) {
+                score += 6;
+            }
 
-                if (
-                    product.code &&
-                    normalizedQuery.includes(
-                        this.qwenProductsService.normalizeSearchText(product.code),
-                    )
-                ) {
-                    score += 6;
-                }
+            if (
+                product.code &&
+                normalizedQuery.includes(
+                    this.qwenProductsService.normalizeSearchText(product.code),
+                )
+            ) {
+                score += 6;
+            }
 
-                return {
-                    product,
-                    score,
-                    index,
-                };
-            });
+            return {
+                product,
+                score,
+                index,
+            };
+        });
 
-        const hasMatches =
-            scoredProducts.some(({ score }) => score > 0);
+        const hasMatches = scoredProducts.some(({ score }) => score > 0);
 
         if (!normalizedQuery) {
             return scoredProducts;
@@ -294,22 +254,18 @@ export class WarehouseProvider {
     ): ScoredProduct[] => {
         const sortBy = params.sortBy ?? "relevance";
         const direction = params.sortDirection ?? "asc";
-        const directionMultiplier =
-            direction === "desc"
-                ? -1
-                : 1;
+        const directionMultiplier = direction === "desc" ? -1 : 1;
 
         if (sortBy === "relevance") {
             return [...products];
         }
 
         return [...products].sort((left, right) => {
-            const compared =
-                this.compareProductsByField(
-                    left.product,
-                    right.product,
-                    sortBy,
-                );
+            const compared = this.compareProductsByField(
+                left.product,
+                right.product,
+                sortBy,
+            );
 
             if (compared !== 0) {
                 return compared * directionMultiplier;
@@ -325,17 +281,11 @@ export class WarehouseProvider {
         sortBy: Exclude<WarehouseSortBy, "relevance">,
     ): number => {
         if (sortBy === "name") {
-            return compareText(
-                left.name ?? "",
-                right.name ?? "",
-            );
+            return compareText(left.name ?? "", right.name ?? "");
         }
 
         if (sortBy === "category") {
-            return compareText(
-                left.pathName ?? "",
-                right.pathName ?? "",
-            );
+            return compareText(left.pathName ?? "", right.pathName ?? "");
         }
 
         if (sortBy === "stock") {
@@ -355,10 +305,7 @@ export class WarehouseProvider {
         left?: number,
         right?: number,
     ): number => {
-        if (
-            typeof left !== "number" &&
-            typeof right !== "number"
-        ) {
+        if (typeof left !== "number" && typeof right !== "number") {
             return 0;
         }
 

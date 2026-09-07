@@ -13,23 +13,23 @@ import {
 
 export type WarehouseQueryType = "aggregate" | "lookup";
 export type WarehouseAggregateOperation =
-    "count" |
-    "list" |
-    "sum" |
-    "min" |
-    "max";
+    | "count"
+    | "list"
+    | "sum"
+    | "min"
+    | "max";
 export type WarehouseQueryTable =
-    "categories" |
-    "products" |
-    "stocks" |
-    "prices";
+    | "categories"
+    | "products"
+    | "stocks"
+    | "prices";
 export type WarehouseFilterOperator =
-    "eq" |
-    "contains" |
-    "gt" |
-    "gte" |
-    "lt" |
-    "lte";
+    | "eq"
+    | "contains"
+    | "gt"
+    | "gte"
+    | "lt"
+    | "lte";
 
 export interface WarehouseQueryFilter {
     field: string;
@@ -63,8 +63,8 @@ export interface WarehouseLookupQueryPlan {
 }
 
 export type WarehouseQueryPlan =
-    WarehouseAggregateQueryPlan |
-    WarehouseLookupQueryPlan;
+    | WarehouseAggregateQueryPlan
+    | WarehouseLookupQueryPlan;
 
 export interface WarehouseQueryResult {
     kind: WarehouseQueryType;
@@ -122,18 +122,11 @@ const FILTER_OPERATORS: WarehouseFilterOperator[] = [
     "lte",
 ];
 
-const isRecord = (
-    value: unknown,
-): value is Record<string, unknown> => {
-    return typeof value === "object" &&
-        value !== null &&
-        !Array.isArray(value);
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+    return typeof value === "object" && value !== null && !Array.isArray(value);
 };
 
-const compareText = (
-    left: string,
-    right: string,
-): number => {
+const compareText = (left: string, right: string): number => {
     return left.localeCompare(right, "ru", { sensitivity: "base" });
 };
 
@@ -218,18 +211,13 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
         };
     };
 
-    detectDeterministicPlan = (
-        question: string,
-    ): WarehouseQueryPlan | null => {
+    detectDeterministicPlan = (question: string): WarehouseQueryPlan | null => {
         const questionText =
             this.qwenProductsService.normalizeSearchText(question);
 
-        const wantsCount = [
-            "сколько",
-            "количество",
-            "число",
-            "count",
-        ].some((token) => questionText.includes(token));
+        const wantsCount = ["сколько", "количество", "число", "count"].some(
+            (token) => questionText.includes(token),
+        );
 
         const wantsList = [
             "список",
@@ -239,11 +227,9 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
             "list",
         ].some((token) => questionText.includes(token));
 
-        const mentionsCategories = [
-            "категор",
-            "category",
-            "categories",
-        ].some((token) => questionText.includes(token));
+        const mentionsCategories = ["категор", "category", "categories"].some(
+            (token) => questionText.includes(token),
+        );
 
         if (mentionsCategories && wantsCount) {
             return {
@@ -262,12 +248,9 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
             };
         }
 
-        const mentionsProducts = [
-            "товар",
-            "товаров",
-            "позиц",
-            "products",
-        ].some((token) => questionText.includes(token));
+        const mentionsProducts = ["товар", "товаров", "позиц", "products"].some(
+            (token) => questionText.includes(token),
+        );
 
         if (mentionsProducts && wantsCount && !questionText.includes("остат")) {
             return {
@@ -280,9 +263,7 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
         return null;
     };
 
-    validatePlan = (
-        value: unknown,
-    ): WarehouseQueryPlan | null => {
+    validatePlan = (value: unknown): WarehouseQueryPlan | null => {
         if (!isRecord(value)) {
             return null;
         }
@@ -314,8 +295,9 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
         plan: WarehouseLookupQueryPlan,
         fallbackProducts: WarehouseProduct[],
     ): Promise<WarehouseQueryResult> => {
-        const normalizedQuery =
-            this.qwenProductsService.normalizeSearchText(plan.query ?? "");
+        const normalizedQuery = this.qwenProductsService.normalizeSearchText(
+            plan.query ?? "",
+        );
 
         let products: WarehouseProduct[] = [];
         const scoreByProductId = new Map<string, number>();
@@ -343,8 +325,10 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
                     .sort((left, right) => right[1] - left[1])
                     .map(([productId]) => productId);
 
-                products = await this.warehouseIdbStorageService
-                    .getProductsByIds(rankedIds);
+                products =
+                    await this.warehouseIdbStorageService.getProductsByIds(
+                        rankedIds,
+                    );
             } else {
                 products = await this.warehouseIdbStorageService.getProducts();
             }
@@ -368,9 +352,9 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
         if (products.length === 0 && fallbackProducts.length > 0) {
             products = normalizedQuery
                 ? this.rankFallbackProducts(
-                    fallbackProducts,
-                    normalizedQuery,
-                ).map(({ product }) => product)
+                      fallbackProducts,
+                      normalizedQuery,
+                  ).map(({ product }) => product)
                 : [...fallbackProducts];
         }
 
@@ -388,10 +372,7 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
                 index: originalIndexById.get(product.id) ?? 0,
             }));
 
-        const sortedProducts = this.sortProducts(
-            scoredProducts,
-            plan.sort,
-        );
+        const sortedProducts = this.sortProducts(scoredProducts, plan.sort);
         const total = sortedProducts.length;
         const offset = Math.max(0, plan.offset ?? 0);
         const limit = this.normalizeLimit(plan.limit, total);
@@ -491,8 +472,9 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
                     "ТИП: categories.list",
                     `ВСЕГО КАТЕГОРИЙ: ${categories.length}`,
                     "",
-                    ...limited.map((category, index) =>
-                        `${index + 1}. ${category.path} | products=${category.productCount} | stockTotal=${category.stockTotal}`,
+                    ...limited.map(
+                        (category, index) =>
+                            `${index + 1}. ${category.path} | products=${category.productCount} | stockTotal=${category.stockTotal}`,
                     ),
                 ].join("\n"),
             );
@@ -674,8 +656,8 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
         fallbackProducts: WarehouseProduct[],
     ): Promise<WarehouseIndexedCatalogSnapshot> => {
         try {
-            const snapshot = await this.warehouseIdbStorageService
-                .getIndexedCatalogSnapshot();
+            const snapshot =
+                await this.warehouseIdbStorageService.getIndexedCatalogSnapshot();
 
             if (
                 snapshot.products.length > 0 &&
@@ -732,9 +714,7 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
             type: "aggregate",
             operation: value.operation as WarehouseAggregateOperation,
             table: value.table as WarehouseQueryTable,
-            field: typeof value.field === "string"
-                ? value.field
-                : undefined,
+            field: typeof value.field === "string" ? value.field : undefined,
             filters,
             limit: this.validateLimit(value.limit),
         };
@@ -750,9 +730,10 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
 
         const plan: WarehouseLookupQueryPlan = {
             type: "lookup",
-            query: typeof value.query === "string"
-                ? value.query.trim()
-                : undefined,
+            query:
+                typeof value.query === "string"
+                    ? value.query.trim()
+                    : undefined,
             filters,
             limit: this.validateLimit(value.limit),
             includeDescription:
@@ -793,8 +774,7 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
         }
 
         const hasSignal = Boolean(
-            plan.query ||
-            (plan.filters && plan.filters.length > 0),
+            plan.query || (plan.filters && plan.filters.length > 0),
         );
 
         return hasSignal ? plan : null;
@@ -820,9 +800,7 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
                 !FILTER_OPERATORS.includes(
                     item.operator as WarehouseFilterOperator,
                 ) ||
-                !["string", "number", "boolean"].includes(
-                    typeof item.value,
-                )
+                !["string", "number", "boolean"].includes(typeof item.value)
             ) {
                 return null;
             }
@@ -837,17 +815,12 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
         return filters;
     };
 
-    private validateLimit = (
-        value: unknown,
-    ): number | undefined => {
+    private validateLimit = (value: unknown): number | undefined => {
         if (typeof value !== "number" || !Number.isFinite(value)) {
             return undefined;
         }
 
-        return Math.max(
-            1,
-            Math.min(MAX_QUERY_LIMIT, Math.floor(value)),
-        );
+        return Math.max(1, Math.min(MAX_QUERY_LIMIT, Math.floor(value)));
     };
 
     private sortProducts = (
@@ -885,8 +858,7 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
         products: WarehouseProduct[],
         query: string,
     ): ScoredProduct[] => {
-        const queryTokens =
-            this.qwenProductsService.getSearchTokens(query);
+        const queryTokens = this.qwenProductsService.getSearchTokens(query);
 
         return products
             .map((product, index) => {
@@ -931,9 +903,7 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
                         score += 40;
                     } else if (
                         token.length >= 3 &&
-                        [...nameTokens].some((term) =>
-                            term.startsWith(token),
-                        )
+                        [...nameTokens].some((term) => term.startsWith(token))
                     ) {
                         score += 15;
                     }
@@ -948,14 +918,13 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
                 return { product, score, index };
             })
             .filter(({ score }) => score > 0)
-            .sort((left, right) =>
-                right.score - left.score || left.index - right.index,
+            .sort(
+                (left, right) =>
+                    right.score - left.score || left.index - right.index,
             );
     };
 
-    private getFieldBonus = (
-        field: WarehouseSearchField,
-    ): number => {
+    private getFieldBonus = (field: WarehouseSearchField): number => {
         if (field === "barcode") {
             return 100;
         }
@@ -1012,10 +981,12 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
                     typeof value === "string" &&
                     typeof filter.value === "string"
                 ) {
-                    return this.qwenProductsService.normalizeSearchText(value) ===
+                    return (
+                        this.qwenProductsService.normalizeSearchText(value) ===
                         this.qwenProductsService.normalizeSearchText(
                             filter.value,
-                        );
+                        )
+                    );
                 }
                 return value === filter.value;
             }
@@ -1030,10 +1001,7 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
                     );
             }
 
-            if (
-                typeof value !== "number" ||
-                typeof filter.value !== "number"
-            ) {
+            if (typeof value !== "number" || typeof filter.value !== "number") {
                 return false;
             }
 
@@ -1100,10 +1068,7 @@ ${this.qwenProductsService.prepareCompactContext(products, includeDescription)}
             return compareText(left.name ?? "", right.name ?? "");
         }
         if (sortBy === "category") {
-            return compareText(
-                left.pathName ?? "",
-                right.pathName ?? "",
-            );
+            return compareText(left.pathName ?? "", right.pathName ?? "");
         }
         if (sortBy === "stock") {
             return this.compareOptionalNumbers(
@@ -1137,9 +1102,7 @@ ${this.qwenProductsService.prepareCompactContext(products, includeDescription)}
     private getNumericStock = (
         product: WarehouseProduct,
     ): number | undefined => {
-        return typeof product.stock === "number"
-            ? product.stock
-            : undefined;
+        return typeof product.stock === "number" ? product.stock : undefined;
     };
 
     private getNumericPrice = (
