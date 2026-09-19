@@ -1,5 +1,5 @@
 import { type WarehouseProduct } from "./ProductsStorageService";
-import { QwenProductsService } from "./QwenProductsService";
+import { ProductTextService } from "./ProductTextService";
 import { OLLAMA_EMBEDDING_MODEL } from "@api/OllamaApi";
 import {
     BARCODES_STORE,
@@ -166,7 +166,7 @@ const createIndexIfMissing = (
 export class WarehouseIdbStorageService {
     private databasePromise?: Promise<IDBDatabase>;
 
-    private readonly qwenProductsService = new QwenProductsService();
+    private readonly productTextService = new ProductTextService();
 
     open = async (): Promise<IDBDatabase> => {
         if (!("indexedDB" in window)) {
@@ -256,7 +256,7 @@ export class WarehouseIdbStorageService {
         query: string,
         fields?: WarehouseSearchField[],
     ): Promise<WarehouseTermMatch[]> => {
-        const tokens = this.qwenProductsService.getSearchTokens(query);
+        const tokens = this.productTextService.getSearchTokens(query);
 
         if (tokens.length === 0) {
             return [];
@@ -557,8 +557,8 @@ export class WarehouseIdbStorageService {
                     id: nameId,
                     original: name,
                     normalized:
-                        this.qwenProductsService.normalizeSearchText(name),
-                    tokens: this.qwenProductsService.getSearchTokens(name),
+                        this.productTextService.normalizeSearchText(name),
+                    tokens: this.productTextService.getSearchTokens(name),
                 });
             }
 
@@ -574,10 +574,10 @@ export class WarehouseIdbStorageService {
                     id: descriptionId,
                     boundedText: this.boundDescription(descriptionText),
                     normalized:
-                        this.qwenProductsService.normalizeSearchText(
+                        this.productTextService.normalizeSearchText(
                             descriptionText,
                         ),
-                    tokens: this.qwenProductsService.getSearchTokens(
+                    tokens: this.productTextService.getSearchTokens(
                         descriptionText,
                     ),
                 });
@@ -590,7 +590,7 @@ export class WarehouseIdbStorageService {
                     path: categoryPath,
                     parentId: this.getParentCategoryId(categoryPath),
                     normalizedPath:
-                        this.qwenProductsService.normalizeSearchText(
+                        this.productTextService.normalizeSearchText(
                             categoryPath,
                         ),
                     productCount: 0,
@@ -761,7 +761,7 @@ export class WarehouseIdbStorageService {
 
         for (const item of weightedFields) {
             const terms = new Set(
-                this.qwenProductsService.getSearchTokens(item.value ?? ""),
+                this.productTextService.getSearchTokens(item.value ?? ""),
             );
 
             for (const term of terms) {
@@ -824,7 +824,7 @@ export class WarehouseIdbStorageService {
     };
 
     private createEntityId = (value: string): string => {
-        return this.qwenProductsService.normalizeSearchText(value) || "unknown";
+        return this.productTextService.normalizeSearchText(value) || "unknown";
     };
 
     private boundDescription = (value: string): string => {

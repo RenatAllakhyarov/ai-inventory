@@ -7,7 +7,7 @@ type RankedProduct = {
     score: number;
 };
 
-export class QwenProductsService {
+export class ProductTextService {
     normalizeSearchText = (value: string): string => {
         return value
             .toLowerCase()

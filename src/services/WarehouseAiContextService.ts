@@ -1,7 +1,7 @@
 import { WarehouseRetrievalPlannerService } from "./WarehouseRetrievalPlannerService";
 import { WarehouseIdbStorageService } from "./WarehouseIdbStorageService";
 import { type WarehouseProduct } from "./ProductsStorageService";
-import { QwenProductsService } from "./QwenProductsService";
+import { ProductTextService } from "./ProductTextService";
 import { WAREHOUSE_SYSTEM_PROMPT } from "@utils/constants";
 import {
     type WarehouseQueryResult,
@@ -29,7 +29,7 @@ export class WarehouseAiContextService {
     private products: WarehouseProduct[] = [];
     private productsSignature = "";
     private productEmbeddings: ProductEmbedding[] = [];
-    private readonly qwenProductsService = new QwenProductsService();
+    private readonly productTextService = new ProductTextService();
     private readonly warehouseCatalogQueryService =
         new WarehouseCatalogQueryService();
     private readonly warehouseIdbStorageService =
@@ -70,7 +70,7 @@ export class WarehouseAiContextService {
 
         const retrievalText = this.getRetrievalText(trimmedQuestion);
         const includeDetails =
-            this.qwenProductsService.shouldIncludeDetails(trimmedQuestion);
+            this.productTextService.shouldIncludeDetails(trimmedQuestion);
 
         const retrievalResult = await this.selectWarehouseContext(
             retrievalText,
@@ -279,7 +279,7 @@ name | stock | price | category${result.includeDescription ? " | bounded descrip
 
 ТОВАРЫ:
 
-${this.qwenProductsService.prepareCompactContext(
+${this.productTextService.prepareCompactContext(
     mergedProducts,
     result.includeDescription,
 )}
@@ -360,7 +360,7 @@ ${this.qwenProductsService.prepareCompactContext(
         }
 
         const inputs = this.products.map((product) =>
-            this.qwenProductsService.getSearchableText(product),
+            this.productTextService.getSearchableText(product),
         );
         const embeddings = await fetchOllamaEmbedApi(inputs);
 
