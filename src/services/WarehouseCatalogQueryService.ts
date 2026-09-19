@@ -6,10 +6,11 @@ import {
     WarehouseIdbStorageService,
 } from "./WarehouseIdbStorageService";
 import {
+    ProductSearchEngine,
     type WarehouseSearchParams,
     type WarehouseSortBy,
     type WarehouseSortDirection,
-} from "./WarehouseProvider";
+} from "./ProductSearchEngine";
 
 export type WarehouseQueryType = "aggregate" | "lookup";
 export type WarehouseAggregateOperation =
@@ -76,12 +77,6 @@ export interface WarehouseQueryResult {
     includeDescription: boolean;
 }
 
-interface ScoredProduct {
-    product: WarehouseProduct;
-    score: number;
-    index: number;
-}
-
 const MAX_QUERY_LIMIT = 100;
 const MAX_CONTEXT_PRODUCTS = 25;
 const LOOKUP_FIELDS: WarehouseSearchField[] = [
@@ -132,6 +127,7 @@ const compareText = (left: string, right: string): number => {
 
 export class WarehouseCatalogQueryService {
     private readonly qwenProductsService = new QwenProductsService();
+    private readonly productSearchEngine = new ProductSearchEngine();
     private readonly warehouseIdbStorageService =
         new WarehouseIdbStorageService();
 
@@ -337,7 +333,7 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
             products = [...fallbackProducts];
 
             if (normalizedQuery) {
-                const fallbackRanked = this.rankFallbackProducts(
+                const fallbackRanked = this.productSearchEngine.rankDslFallbackProducts(
                     products,
                     normalizedQuery,
                 );
@@ -351,7 +347,7 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
 
         if (products.length === 0 && fallbackProducts.length > 0) {
             products = normalizedQuery
-                ? this.rankFallbackProducts(
+                ? this.productSearchEngine.rankDslFallbackProducts(
                       fallbackProducts,
                       normalizedQuery,
                   ).map(({ product }) => product)
@@ -372,7 +368,11 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
                 index: originalIndexById.get(product.id) ?? 0,
             }));
 
-        const sortedProducts = this.sortProducts(scoredProducts, plan.sort);
+        const sortedProducts = this.productSearchEngine.sortScoredProducts(
+            scoredProducts,
+            plan.sort?.field,
+            plan.sort?.direction,
+        );
         const total = sortedProducts.length;
         const offset = Math.max(0, plan.offset ?? 0);
         const limit = this.normalizeLimit(plan.limit, total);
@@ -537,8 +537,8 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
         const values = products
             .map((product) =>
                 plan.field === "price"
-                    ? this.getNumericPrice(product)
-                    : this.getNumericStock(product),
+                    ? this.productSearchEngine.getNumericPrice(product)
+                    : this.productSearchEngine.getNumericStock(product),
             )
             .filter((value): value is number => typeof value === "number");
 
@@ -823,107 +823,6 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
         return Math.max(1, Math.min(MAX_QUERY_LIMIT, Math.floor(value)));
     };
 
-    private sortProducts = (
-        products: ScoredProduct[],
-        sort?: WarehouseQuerySort,
-    ): ScoredProduct[] => {
-        const field = sort?.field ?? "relevance";
-        const direction = sort?.direction ?? "asc";
-        const directionMultiplier = direction === "desc" ? -1 : 1;
-
-        if (field === "relevance") {
-            return [...products].sort((left, right) => {
-                if (left.score !== right.score) {
-                    return right.score - left.score;
-                }
-                return left.index - right.index;
-            });
-        }
-
-        return [...products].sort((left, right) => {
-            const compared = this.compareProductsByField(
-                left.product,
-                right.product,
-                field,
-            );
-
-            if (compared !== 0) {
-                return compared * directionMultiplier;
-            }
-            return left.index - right.index;
-        });
-    };
-
-    private rankFallbackProducts = (
-        products: WarehouseProduct[],
-        query: string,
-    ): ScoredProduct[] => {
-        const queryTokens = this.qwenProductsService.getSearchTokens(query);
-
-        return products
-            .map((product, index) => {
-                const nameTokens = new Set(
-                    this.qwenProductsService.getSearchTokens(
-                        product.name ?? "",
-                    ),
-                );
-                const categoryTokens = new Set(
-                    this.qwenProductsService.getSearchTokens(
-                        product.pathName ?? "",
-                    ),
-                );
-                const descriptionTokens = new Set(
-                    this.qwenProductsService.getSearchTokens(
-                        product.description ?? "",
-                    ),
-                );
-                const exactIdentifiers = new Set(
-                    [
-                        product.article,
-                        product.code,
-                        product.externalCode,
-                        ...(product.barcodes ?? []).flatMap((barcode) => [
-                            barcode.ean13,
-                            barcode.code128,
-                            barcode.upc,
-                        ]),
-                    ]
-                        .filter((value): value is string => Boolean(value))
-                        .flatMap((value) =>
-                            this.qwenProductsService.getSearchTokens(value),
-                        ),
-                );
-
-                let score = 0;
-                for (const token of queryTokens) {
-                    if (exactIdentifiers.has(token)) {
-                        score += 120;
-                    }
-                    if (nameTokens.has(token)) {
-                        score += 40;
-                    } else if (
-                        token.length >= 3 &&
-                        [...nameTokens].some((term) => term.startsWith(token))
-                    ) {
-                        score += 15;
-                    }
-                    if (categoryTokens.has(token)) {
-                        score += 15;
-                    }
-                    if (descriptionTokens.has(token)) {
-                        score += 3;
-                    }
-                }
-
-                return { product, score, index };
-            })
-            .filter(({ score }) => score > 0)
-            .sort(
-                (left, right) =>
-                    right.score - left.score || left.index - right.index,
-            );
-    };
-
     private getFieldBonus = (field: WarehouseSearchField): number => {
         if (field === "barcode") {
             return 100;
@@ -954,8 +853,8 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
                     .filter(Boolean)
                     .join(" "),
                 barcode: this.qwenProductsService.getBarcode(product),
-                stock: this.getNumericStock(product),
-                price: this.getNumericPrice(product),
+                stock: this.productSearchEngine.getNumericStock(product),
+                price: this.productSearchEngine.getNumericPrice(product),
                 archived: Boolean(product.archived),
             },
             filters,
@@ -1059,59 +958,4 @@ ${this.qwenProductsService.prepareCompactContext(products, includeDescription)}
         }
     };
 
-    private compareProductsByField = (
-        left: WarehouseProduct,
-        right: WarehouseProduct,
-        sortBy: Exclude<WarehouseSortBy, "relevance">,
-    ): number => {
-        if (sortBy === "name") {
-            return compareText(left.name ?? "", right.name ?? "");
-        }
-        if (sortBy === "category") {
-            return compareText(left.pathName ?? "", right.pathName ?? "");
-        }
-        if (sortBy === "stock") {
-            return this.compareOptionalNumbers(
-                this.getNumericStock(left),
-                this.getNumericStock(right),
-            );
-        }
-
-        return this.compareOptionalNumbers(
-            this.getNumericPrice(left),
-            this.getNumericPrice(right),
-        );
-    };
-
-    private compareOptionalNumbers = (
-        left?: number,
-        right?: number,
-    ): number => {
-        if (typeof left !== "number" && typeof right !== "number") {
-            return 0;
-        }
-        if (typeof left !== "number") {
-            return 1;
-        }
-        if (typeof right !== "number") {
-            return -1;
-        }
-        return left - right;
-    };
-
-    private getNumericStock = (
-        product: WarehouseProduct,
-    ): number | undefined => {
-        return typeof product.stock === "number" ? product.stock : undefined;
-    };
-
-    private getNumericPrice = (
-        product: WarehouseProduct,
-    ): number | undefined => {
-        const [firstSalePrice] = product.salePrices ?? [];
-
-        return typeof firstSalePrice?.value === "number"
-            ? firstSalePrice.value / 100
-            : undefined;
-    };
 }
