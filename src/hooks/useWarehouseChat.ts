@@ -69,7 +69,8 @@ export const useWarehouseChat = ({
             return;
         }
 
-        const cachedProducts = productsStorage.getProductsFromStorage();
+        const { products: cachedProducts } =
+            productsStorage.getProductsFromStorage();
         const availableProducts =
             cachedProducts.length > 0 ? cachedProducts : products;
 

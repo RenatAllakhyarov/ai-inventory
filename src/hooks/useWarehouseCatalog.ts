@@ -130,7 +130,19 @@ export const useWarehouseCatalog = ({
     useEffect(() => {
         const loadProducts = async (): Promise<void> => {
             try {
-                const savedProducts = productsStorage.getProductsFromStorage();
+                const savedProductsResult =
+                    productsStorage.getProductsFromStorage();
+                const { products: savedProducts, isInvalid } =
+                    savedProductsResult;
+
+                if (isInvalid) {
+                    showToast({
+                        type: "warning",
+                        title: "Локальный каталог сброшен",
+                        message:
+                            "Сохраненные товары повреждены, загружаем доступный каталог.",
+                    });
+                }
 
                 if (savedProducts.length > 0) {
                     console.log("Берем каталог из localStorage");
@@ -270,7 +282,8 @@ export const useWarehouseCatalog = ({
             try {
                 const freshProducts =
                     await configuredWarehouseSourceClient.fetchCatalog();
-                const oldProducts = productsStorage.getProductsFromStorage();
+                const { products: oldProducts } =
+                    productsStorage.getProductsFromStorage();
                 const changed = productsStorage.compareProducts(
                     oldProducts,
                     freshProducts,

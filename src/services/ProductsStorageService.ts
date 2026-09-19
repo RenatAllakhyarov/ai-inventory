@@ -20,19 +20,57 @@ export interface WarehouseProduct {
     }>;
 }
 
+export interface ProductsStorageReadResult {
+    products: WarehouseProduct[];
+    isInvalid: boolean;
+}
+
+const isWarehouseProduct = (value: unknown): value is WarehouseProduct => {
+    if (
+        typeof value !== "object"
+        || value === null
+        || Array.isArray(value)
+    ) {
+        return false;
+    }
+
+    const product = value as { id?: unknown };
+
+    return typeof product.id === "string" && product.id.trim().length > 0;
+};
+
 export class ProductsStorageService {
     saveProductsToStorage = (products: WarehouseProduct[]): void => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(products));
     };
 
-    getProductsFromStorage = (): WarehouseProduct[] => {
+    getProductsFromStorage = (): ProductsStorageReadResult => {
         const data = localStorage.getItem(STORAGE_KEY);
 
         if (!data) {
-            return [];
+            return {
+                products: [],
+                isInvalid: false,
+            };
         }
 
-        return JSON.parse(data) as WarehouseProduct[];
+        try {
+            const products: unknown = JSON.parse(data);
+
+            if (
+                !Array.isArray(products)
+                || !products.every(isWarehouseProduct)
+            ) {
+                return this.clearInvalidProducts();
+            }
+
+            return {
+                products,
+                isInvalid: false,
+            };
+        } catch {
+            return this.clearInvalidProducts();
+        }
     };
 
     compareProducts = (
@@ -66,5 +104,14 @@ export class ProductsStorageService {
         }
 
         return false;
+    };
+
+    private clearInvalidProducts = (): ProductsStorageReadResult => {
+        localStorage.removeItem(STORAGE_KEY);
+
+        return {
+            products: [],
+            isInvalid: true,
+        };
     };
 }
