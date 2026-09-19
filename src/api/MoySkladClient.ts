@@ -3,6 +3,7 @@ import {
     type WarehouseSourceClient,
     type WarehouseStock,
 } from "@services/WarehouseSourceClient";
+import { getMoySkladProductIdFromHref } from "./MoySkladProductHref";
 
 interface MoySkladProductsResponse {
     rows?: WarehouseProduct[];
@@ -20,17 +21,6 @@ interface MoySkladStockRow {
         };
     };
 }
-
-const getProductIdFromHref = (href?: string): string | undefined => {
-    if (!href) {
-        return undefined;
-    }
-
-    const cleanHref = href.split("?")[0].replace(/\/$/, "");
-    const parts = cleanHref.split("/");
-
-    return parts.at(-1);
-};
 
 export class MoySkladClient implements WarehouseSourceClient {
     readonly sourceName = "МойСклад";
@@ -52,7 +42,7 @@ export class MoySkladClient implements WarehouseSourceClient {
         const stockRows = response.rows ?? [];
 
         return stockRows.flatMap((stockRow): WarehouseStock[] => {
-            const productId = getProductIdFromHref(
+            const productId = getMoySkladProductIdFromHref(
                 stockRow.assortment?.meta?.href,
             );
 
