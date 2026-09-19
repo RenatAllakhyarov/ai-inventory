@@ -3,6 +3,7 @@ import { type ReactElement } from "react";
 import "./style.css";
 
 interface IProductTableProps {
+    sourceName: string;
     isCatalogLoading: boolean;
     allProductsCount: number;
     products: WarehouseProduct[];
@@ -27,6 +28,7 @@ const getProductStock = (product: WarehouseProduct): string => {
 };
 
 const ProductTable = ({
+    sourceName,
     isCatalogLoading,
     allProductsCount,
     products,
@@ -44,14 +46,16 @@ const ProductTable = ({
             {isCatalogLoading && (
                 <div className="empty-state empty-state--loading">
                     <strong>Загружаем каталог</strong>
-                    <span>Проверяем локальные источники и МойСклад.</span>
+                    <span>
+                        Проверяем локальные источники и {sourceName}.
+                    </span>
                 </div>
             )}
             {!isCatalogLoading && !hasProducts && (
                 <div className="empty-state">
                     <strong>Каталог пока не загружен</strong>
                     <span>
-                        Когда появятся данные из МоегоСклада или localStorage,
+                        Когда появятся данные из источника {sourceName} или localStorage,
                         здесь будет рабочий список товаров.
                     </span>
                 </div>

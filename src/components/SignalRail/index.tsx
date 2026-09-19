@@ -3,6 +3,7 @@ import { type ReactElement } from "react";
 import "./style.css";
 
 interface ISignalRailProps {
+    sourceName: string;
     connectionLabel: string;
     connectionTone: ConnectionTone;
     catalogLabel: string;
@@ -11,6 +12,7 @@ interface ISignalRailProps {
 }
 
 const SignalRail = ({
+    sourceName,
     connectionLabel,
     connectionTone,
     catalogLabel,
@@ -27,7 +29,7 @@ const SignalRail = ({
             </div>
             <div className="signal-grid">
                 <div className={`signal-cell signal-cell--${connectionTone}`}>
-                    <span className="signal-label">МойСклад</span>
+                    <span className="signal-label">{sourceName}</span>
                     <strong>{connectionLabel}</strong>
                 </div>
                 <div className="signal-cell">
