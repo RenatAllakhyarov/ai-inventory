@@ -1,10 +1,10 @@
-import { checkMoySkladConnection } from "@api/MoySkladApi";
-import { fetchMoySkladCatalog } from "@services/MoySkladCatalogService";
+import { configuredWarehouseSourceClient } from "@services/ConfiguredWarehouseSourceClient";
 import {
     ProductsStorageService,
     type WarehouseProduct,
 } from "@services/ProductsStorageService";
 import { WarehouseIdbStorageService } from "@services/WarehouseIdbStorageService";
+import { fetchWarehouseCatalog } from "@services/WarehouseCatalogService";
 import {
     WarehouseProvider,
     type WarehouseSearchParams,
@@ -53,6 +53,7 @@ interface UseWarehouseCatalogOptions {
 }
 
 interface UseWarehouseCatalogResult {
+    sourceName: string;
     isConnected: boolean | null;
     products: WarehouseProduct[];
     isCatalogLoading: boolean;
@@ -72,6 +73,7 @@ interface UseWarehouseCatalogResult {
 export const useWarehouseCatalog = ({
     showToast,
 }: UseWarehouseCatalogOptions): UseWarehouseCatalogResult => {
+    const sourceName = configuredWarehouseSourceClient.sourceName;
     const [isConnected, setIsConnected] = useState<boolean | null>(null);
     const [products, setProducts] = useState<WarehouseProduct[]>([]);
     const [isCatalogLoading, setIsCatalogLoading] = useState<boolean>(true);
@@ -185,20 +187,22 @@ export const useWarehouseCatalog = ({
                         type: "warning",
                         title: "IndexedDB недоступен",
                         message:
-                            "Пробуем загрузить свежий каталог из МоегоСклада.",
+                            `Пробуем загрузить свежий каталог из источника ${sourceName}.`,
                     });
                 }
 
-                console.log("Локальный каталог пустой, загружаем МойСклад");
+                console.log(`Локальный каталог пустой, загружаем ${sourceName}`);
 
-                const data = await fetchMoySkladCatalog();
+                const data = await fetchWarehouseCatalog(
+                    configuredWarehouseSourceClient,
+                );
 
                 productsStorage.saveProductsToStorage(data);
 
                 showToast({
                     type: "success",
                     title: "Каталог загружен",
-                    message: `Получили ${data.length} товаров из МоегоСклада.`,
+                    message: `Получили ${data.length} товаров из источника ${sourceName}.`,
                 });
 
                 try {
@@ -233,19 +237,22 @@ export const useWarehouseCatalog = ({
         };
 
         void loadProducts();
-    }, [showToast]);
+    }, [showToast, sourceName]);
 
     useEffect(() => {
         const checkConnection = async (): Promise<void> => {
-            const result = await checkMoySkladConnection();
+            const result =
+                await configuredWarehouseSourceClient.checkConnection();
 
             setIsConnected(result);
 
-            console.log("MoySklad connection:", result);
+            console.log(`${sourceName} connection:`, result);
 
             showToast({
                 type: result ? "success" : "error",
-                title: result ? "МойСклад подключен" : "Нет связи с МойСкладом",
+                title: result
+                    ? `${sourceName} подключен`
+                    : `Нет связи с ${sourceName}`,
                 message: result
                     ? "API склада доступен."
                     : "Показываем локальные данные, если они есть.",
@@ -254,7 +261,7 @@ export const useWarehouseCatalog = ({
         };
 
         void checkConnection();
-    }, [showToast]);
+    }, [showToast, sourceName]);
 
     useEffect(() => {
         if (products.length === 0) {
@@ -263,7 +270,9 @@ export const useWarehouseCatalog = ({
 
         const syncProducts = async (): Promise<void> => {
             try {
-                const freshProducts = await fetchMoySkladCatalog();
+                const freshProducts = await fetchWarehouseCatalog(
+                    configuredWarehouseSourceClient,
+                );
                 const oldProducts = productsStorage.getProductsFromStorage();
                 const changed = productsStorage.compareProducts(
                     oldProducts,
@@ -327,6 +336,7 @@ export const useWarehouseCatalog = ({
     }, [products.length, showToast]);
 
     return {
+        sourceName,
         isConnected,
         products,
         isCatalogLoading,

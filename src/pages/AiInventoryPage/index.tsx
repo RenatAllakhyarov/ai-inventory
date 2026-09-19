@@ -15,6 +15,7 @@ import "./style.css";
 const AiInventoryPage = (): ReactElement => {
     const { messages: toastMessages, dismissToast, showToast } = useToasts();
     const {
+        sourceName,
         isConnected,
         products,
         isCatalogLoading,
@@ -66,6 +67,7 @@ const AiInventoryPage = (): ReactElement => {
     return (
         <main className="warehouse-shell">
             <SignalRail
+                sourceName={sourceName}
                 connectionLabel={connectionLabel}
                 connectionTone={connectionTone}
                 catalogLabel={catalogLabel}
@@ -102,6 +104,7 @@ const AiInventoryPage = (): ReactElement => {
                         onShowInStockOnlyChange={setShowInStockOnly}
                     />
                     <ProductTable
+                        sourceName={sourceName}
                         isCatalogLoading={isCatalogLoading}
                         allProductsCount={products.length}
                         products={searchResult.items}
