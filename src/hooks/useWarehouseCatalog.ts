@@ -4,7 +4,6 @@ import {
     type WarehouseProduct,
 } from "@services/ProductsStorageService";
 import { WarehouseIdbStorageService } from "@services/WarehouseIdbStorageService";
-import { fetchWarehouseCatalog } from "@services/WarehouseCatalogService";
 import {
     WarehouseProvider,
     type WarehouseSearchParams,
@@ -193,9 +192,8 @@ export const useWarehouseCatalog = ({
 
                 console.log(`Локальный каталог пустой, загружаем ${sourceName}`);
 
-                const data = await fetchWarehouseCatalog(
-                    configuredWarehouseSourceClient,
-                );
+                const data =
+                    await configuredWarehouseSourceClient.fetchCatalog();
 
                 productsStorage.saveProductsToStorage(data);
 
@@ -270,9 +268,8 @@ export const useWarehouseCatalog = ({
 
         const syncProducts = async (): Promise<void> => {
             try {
-                const freshProducts = await fetchWarehouseCatalog(
-                    configuredWarehouseSourceClient,
-                );
+                const freshProducts =
+                    await configuredWarehouseSourceClient.fetchCatalog();
                 const oldProducts = productsStorage.getProductsFromStorage();
                 const changed = productsStorage.compareProducts(
                     oldProducts,

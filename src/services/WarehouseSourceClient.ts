@@ -9,5 +9,6 @@ export interface WarehouseSourceClient {
     sourceName: string;
     fetchProducts: () => Promise<WarehouseProduct[]>;
     fetchStocks: () => Promise<WarehouseStock[]>;
+    fetchCatalog: () => Promise<WarehouseProduct[]>;
     checkConnection: () => Promise<boolean>;
 }
