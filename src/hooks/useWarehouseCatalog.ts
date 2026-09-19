@@ -10,7 +10,7 @@ import {
     type WarehouseSearchResult,
 } from "@services/WarehouseProvider";
 import { type ToastInput } from "@hooks/useToasts";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const productsStorage = new ProductsStorageService();
 const warehouseProvider = new WarehouseProvider();
@@ -82,6 +82,7 @@ export const useWarehouseCatalog = ({
     const [searchQuery, setSearchQuery] = useState<string>("");
     const [selectedCategory, setSelectedCategory] = useState<string>("");
     const [showInStockOnly, setShowInStockOnly] = useState<boolean>(false);
+    const searchRequestId = useRef(0);
 
     const productsWithStock = products.filter(
         (product) => typeof product.stock === "number" && product.stock > 0,
@@ -93,6 +94,11 @@ export const useWarehouseCatalog = ({
     const categoryOptions = getCategoryOptions(products);
 
     useEffect(() => {
+        const requestId = ++searchRequestId.current;
+        let isActive = true;
+        const isCurrent = (): boolean =>
+            isActive && requestId === searchRequestId.current;
+
         const searchProducts = async (): Promise<void> => {
             const searchParams = getSearchParams(
                 searchQuery,
@@ -107,8 +113,10 @@ export const useWarehouseCatalog = ({
                         products,
                     );
 
+                if (!isCurrent()) return;
                 setSearchResult(result);
             } catch (error) {
+                if (!isCurrent()) return;
                 console.warn("Warehouse search failed:", error);
 
                 showToast({
@@ -125,9 +133,17 @@ export const useWarehouseCatalog = ({
         };
 
         void searchProducts();
+
+        return (): void => {
+            isActive = false;
+        };
     }, [products, searchQuery, selectedCategory, showInStockOnly, showToast]);
 
     useEffect(() => {
+        const controller = new AbortController();
+        let isActive = true;
+        const isCurrent = (): boolean => isActive && !controller.signal.aborted;
+
         const loadProducts = async (): Promise<void> => {
             try {
                 const savedProductsResult =
@@ -160,6 +176,7 @@ export const useWarehouseCatalog = ({
                             savedProducts,
                         );
                     } catch (error) {
+                        if (!isCurrent()) return;
                         console.warn("IndexedDB hydration fallback:", error);
 
                         showToast({
@@ -177,6 +194,8 @@ export const useWarehouseCatalog = ({
                     const idbProducts =
                         await warehouseIdbStorageService.getProducts();
 
+                    if (!isCurrent()) return;
+
                     if (idbProducts.length > 0) {
                         console.log("Берем каталог из IndexedDB");
 
@@ -192,6 +211,7 @@ export const useWarehouseCatalog = ({
                         return;
                     }
                 } catch (error) {
+                    if (!isCurrent()) return;
                     console.warn("IndexedDB load fallback:", error);
 
                     showToast({
@@ -205,7 +225,11 @@ export const useWarehouseCatalog = ({
                 console.log(`Локальный каталог пустой, загружаем ${sourceName}`);
 
                 const data =
-                    await configuredWarehouseSourceClient.fetchCatalog();
+                    await configuredWarehouseSourceClient.fetchCatalog(
+                        controller.signal,
+                    );
+
+                if (!isCurrent()) return;
 
                 productsStorage.saveProductsToStorage(data);
 
@@ -218,6 +242,7 @@ export const useWarehouseCatalog = ({
                 try {
                     await warehouseIdbStorageService.replaceProducts(data);
                 } catch (error) {
+                    if (!isCurrent()) return;
                     console.warn("IndexedDB sync fallback:", error);
 
                     showToast({
@@ -230,6 +255,7 @@ export const useWarehouseCatalog = ({
 
                 setProducts(data);
             } catch (error) {
+                if (!isCurrent()) return;
                 console.error("Ошибка загрузки товаров:", error);
 
                 showToast({
@@ -242,35 +268,61 @@ export const useWarehouseCatalog = ({
                     durationMs: 6500,
                 });
             } finally {
-                setIsCatalogLoading(false);
+                if (isCurrent()) {
+                    setIsCatalogLoading(false);
+                }
             }
         };
 
         void loadProducts();
+
+        return (): void => {
+            isActive = false;
+            controller.abort();
+        };
     }, [showToast, sourceName]);
 
     useEffect(() => {
+        const controller = new AbortController();
+        let isActive = true;
+        const isCurrent = (): boolean => isActive && !controller.signal.aborted;
+
         const checkConnection = async (): Promise<void> => {
-            const result =
-                await configuredWarehouseSourceClient.checkConnection();
+            try {
+                const result =
+                    await configuredWarehouseSourceClient.checkConnection(
+                        controller.signal,
+                    );
 
-            setIsConnected(result);
+                if (!isCurrent()) return;
 
-            console.log(`${sourceName} connection:`, result);
+                setIsConnected(result);
 
-            showToast({
-                type: result ? "success" : "error",
-                title: result
-                    ? `${sourceName} подключен`
-                    : `Нет связи с ${sourceName}`,
-                message: result
-                    ? "API склада доступен."
-                    : "Показываем локальные данные, если они есть.",
-                durationMs: result ? 3200 : 6500,
-            });
+                console.log(`${sourceName} connection:`, result);
+
+                showToast({
+                    type: result ? "success" : "error",
+                    title: result
+                        ? `${sourceName} подключен`
+                        : `Нет связи с ${sourceName}`,
+                    message: result
+                        ? "API склада доступен."
+                        : "Показываем локальные данные, если они есть.",
+                    durationMs: result ? 3200 : 6500,
+                });
+            } catch (error) {
+                if (isCurrent()) {
+                    console.warn("Warehouse connection check failed:", error);
+                }
+            }
         };
 
         void checkConnection();
+
+        return (): void => {
+            isActive = false;
+            controller.abort();
+        };
     }, [showToast, sourceName]);
 
     useEffect(() => {
@@ -278,10 +330,27 @@ export const useWarehouseCatalog = ({
             return;
         }
 
+        let isActive = true;
+        let latestSyncRequestId = 0;
+        let activeSyncController: AbortController | null = null;
+
         const syncProducts = async (): Promise<void> => {
+            activeSyncController?.abort();
+            const controller = new AbortController();
+            activeSyncController = controller;
+            const requestId = ++latestSyncRequestId;
+            const isCurrent = (): boolean =>
+                isActive
+                && requestId === latestSyncRequestId
+                && !controller.signal.aborted;
+
             try {
                 const freshProducts =
-                    await configuredWarehouseSourceClient.fetchCatalog();
+                    await configuredWarehouseSourceClient.fetchCatalog(
+                        controller.signal,
+                    );
+
+                if (!isCurrent()) return;
                 const { products: oldProducts } =
                     productsStorage.getProductsFromStorage();
                 const changed = productsStorage.compareProducts(
@@ -297,6 +366,7 @@ export const useWarehouseCatalog = ({
                             freshProducts,
                         );
                     } catch (error) {
+                        if (!isCurrent()) return;
                         console.warn(
                             "IndexedDB periodic sync fallback:",
                             error,
@@ -310,6 +380,7 @@ export const useWarehouseCatalog = ({
                         });
                     }
 
+                    if (!isCurrent()) return;
                     setProducts(freshProducts);
 
                     showToast({
@@ -319,6 +390,7 @@ export const useWarehouseCatalog = ({
                     });
                 }
             } catch (error) {
+                if (!isCurrent()) return;
                 console.error("Ошибка синхронизации товаров:", error);
 
                 showToast({
@@ -330,6 +402,10 @@ export const useWarehouseCatalog = ({
                             : "Не удалось обновить складовой каталог.",
                     durationMs: 6500,
                 });
+            } finally {
+                if (activeSyncController === controller) {
+                    activeSyncController = null;
+                }
             }
         };
 
@@ -341,6 +417,9 @@ export const useWarehouseCatalog = ({
         );
 
         return (): void => {
+            isActive = false;
+            latestSyncRequestId++;
+            activeSyncController?.abort();
             window.clearInterval(intervalId);
         };
     }, [products.length, showToast]);

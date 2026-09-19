@@ -57,7 +57,7 @@ export class WarehouseAiContextService {
         return [...this.sessionMessages];
     };
 
-    ask = async (question: string): Promise<string> => {
+    ask = async (question: string, signal?: AbortSignal): Promise<string> => {
         const trimmedQuestion = question.trim();
 
         if (!trimmedQuestion) {
@@ -75,7 +75,10 @@ export class WarehouseAiContextService {
         const retrievalResult = await this.selectWarehouseContext(
             retrievalText,
             includeDetails,
+            signal,
         );
+
+        this.throwIfAborted(signal);
 
         if (
             retrievalResult.total === 0 &&
@@ -104,7 +107,9 @@ export class WarehouseAiContextService {
             retrievalResult.factsText,
             trimmedQuestion,
         );
-        const answer = await fetchOllamaChatApi(messages);
+        const answer = await fetchOllamaChatApi(messages, signal);
+
+        this.throwIfAborted(signal);
 
         this.sessionMessages = this.trimSessionMessages([
             ...this.sessionMessages,
@@ -168,6 +173,7 @@ ${warehouseFactsText}
     private selectWarehouseContext = async (
         retrievalText: string,
         includeDetails: boolean,
+        signal?: AbortSignal,
     ): Promise<WarehouseQueryResult> => {
         const limit = Math.min(this.products.length, MAX_CONTEXT_PRODUCTS);
 
@@ -187,7 +193,10 @@ ${warehouseFactsText}
             const retrievalPlan =
                 await this.warehouseRetrievalPlannerService.planRetrieval(
                     retrievalText,
+                    signal,
                 );
+
+            this.throwIfAborted(signal);
 
             if (retrievalPlan) {
                 const plannedResult =
@@ -213,10 +222,15 @@ ${warehouseFactsText}
                         plannedResult,
                         retrievalText,
                         limit,
+                        signal,
                     );
                 }
             }
         } catch (error) {
+            if (signal?.aborted) {
+                throw error;
+            }
+
             console.warn("Warehouse retrieval planner fallback:", error);
         }
 
@@ -239,6 +253,7 @@ ${warehouseFactsText}
             lexicalResult,
             retrievalText,
             limit,
+            signal,
         );
     };
 
@@ -246,6 +261,7 @@ ${warehouseFactsText}
         result: WarehouseQueryResult,
         retrievalText: string,
         limit: number,
+        signal?: AbortSignal,
     ): Promise<WarehouseQueryResult> => {
         if (
             result.kind !== "lookup" ||
@@ -259,6 +275,7 @@ ${warehouseFactsText}
             const embeddingProducts = await this.selectEmbeddingProducts(
                 retrievalText,
                 limit,
+                signal,
             );
             const mergedProducts = this.mergeProducts(
                 result.products,
@@ -286,6 +303,10 @@ ${this.productTextService.prepareCompactContext(
                 `.trim(),
             };
         } catch (error) {
+            if (signal?.aborted) {
+                throw error;
+            }
+
             console.warn("Ollama embedding retrieval fallback:", error);
 
             return result;
@@ -295,14 +316,22 @@ ${this.productTextService.prepareCompactContext(
     private selectEmbeddingProducts = async (
         retrievalText: string,
         limit: number,
+        signal?: AbortSignal,
     ): Promise<WarehouseProduct[]> => {
-        await this.ensureProductEmbeddings();
+        await this.ensureProductEmbeddings(signal);
+
+        this.throwIfAborted(signal);
 
         if (this.productEmbeddings.length === 0) {
             return [];
         }
 
-        const [questionEmbedding] = await fetchOllamaEmbedApi([retrievalText]);
+        const [questionEmbedding] = await fetchOllamaEmbedApi(
+            [retrievalText],
+            signal,
+        );
+
+        this.throwIfAborted(signal);
 
         if (!questionEmbedding) {
             return [];
@@ -337,7 +366,9 @@ ${this.productTextService.prepareCompactContext(
             .map(({ product }) => product);
     };
 
-    private ensureProductEmbeddings = async (): Promise<void> => {
+    private ensureProductEmbeddings = async (
+        signal?: AbortSignal,
+    ): Promise<void> => {
         if (this.productEmbeddings.length > 0) {
             return;
         }
@@ -347,6 +378,8 @@ ${this.productTextService.prepareCompactContext(
                 await this.warehouseIdbStorageService.getEmbeddings(
                     this.productsSignature,
                 );
+
+            this.throwIfAborted(signal);
 
             if (storedEmbeddings.length > 0) {
                 this.productEmbeddings = storedEmbeddings.map((record) => ({
@@ -362,7 +395,9 @@ ${this.productTextService.prepareCompactContext(
         const inputs = this.products.map((product) =>
             this.productTextService.getSearchableText(product),
         );
-        const embeddings = await fetchOllamaEmbedApi(inputs);
+        const embeddings = await fetchOllamaEmbedApi(inputs, signal);
+
+        this.throwIfAborted(signal);
 
         this.productEmbeddings = embeddings
             .map((embedding, index) => {
@@ -427,6 +462,12 @@ ${this.productTextService.prepareCompactContext(
                 ].join(":"),
             )
             .join("|");
+    };
+
+    private throwIfAborted = (signal?: AbortSignal): void => {
+        if (signal?.aborted) {
+            throw new Error("Request aborted");
+        }
     };
 
     private getCosineSimilarity = (left: number[], right: number[]): number => {

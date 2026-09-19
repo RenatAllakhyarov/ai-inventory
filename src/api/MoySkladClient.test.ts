@@ -51,6 +51,7 @@ describe("MoySkladClient", () => {
         await expect(client.fetchProducts()).resolves.toEqual([]);
         expect(fetchImplementation).toHaveBeenCalledWith(
             "https://warehouse.test/entity/product?limit=1000",
+            { signal: undefined },
         );
     });
 
