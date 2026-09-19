@@ -31,6 +31,7 @@ interface OllamaEmbedResponse {
 
 export const fetchOllamaChatApi = async (
     messages: OllamaChatMessage[],
+    signal?: AbortSignal,
 ): Promise<string> => {
     const response = await fetch(`${OLLAMA_URL}/api/chat`, {
         method: "POST",
@@ -46,6 +47,7 @@ export const fetchOllamaChatApi = async (
             },
             messages,
         }),
+        signal,
     });
 
     if (!response.ok) {
@@ -61,6 +63,7 @@ export const fetchOllamaChatApi = async (
 
 export const fetchOllamaEmbedApi = async (
     input: string[],
+    signal?: AbortSignal,
 ): Promise<number[][]> => {
     const response = await fetch(`${OLLAMA_URL}/api/embed`, {
         method: "POST",
@@ -71,6 +74,7 @@ export const fetchOllamaEmbedApi = async (
             model: OLLAMA_EMBEDDING_MODEL,
             input,
         }),
+        signal,
     });
 
     if (!response.ok) {
@@ -86,7 +90,10 @@ export const fetchOllamaEmbedApi = async (
     return data.embeddings;
 };
 
-export const fetchOllamaApi = async (prompt: string): Promise<string> => {
+export const fetchOllamaApi = async (
+    prompt: string,
+    signal?: AbortSignal,
+): Promise<string> => {
     return fetchOllamaChatApi([
         {
             role: "system",
@@ -96,5 +103,5 @@ export const fetchOllamaApi = async (prompt: string): Promise<string> => {
             role: "user",
             content: prompt,
         },
-    ]);
+    ], signal);
 };

@@ -7,8 +7,8 @@ export interface WarehouseStock {
 
 export interface WarehouseSourceClient {
     sourceName: string;
-    fetchProducts: () => Promise<WarehouseProduct[]>;
-    fetchStocks: () => Promise<WarehouseStock[]>;
-    fetchCatalog: () => Promise<WarehouseProduct[]>;
-    checkConnection: () => Promise<boolean>;
+    fetchProducts: (signal?: AbortSignal) => Promise<WarehouseProduct[]>;
+    fetchStocks: (signal?: AbortSignal) => Promise<WarehouseStock[]>;
+    fetchCatalog: (signal?: AbortSignal) => Promise<WarehouseProduct[]>;
+    checkConnection: (signal?: AbortSignal) => Promise<boolean>;
 }

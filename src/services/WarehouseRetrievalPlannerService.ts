@@ -10,9 +10,11 @@ export class WarehouseRetrievalPlannerService {
 
     planRetrieval = async (
         question: string,
+        signal?: AbortSignal,
     ): Promise<WarehouseQueryPlan | null> => {
         const answer = await fetchOllamaChatApi(
             this.preparePlannerMessages(question),
+            signal,
         );
 
         return this.parsePlan(answer);

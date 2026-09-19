@@ -57,11 +57,16 @@ export const useWarehouseChat = ({
     const [chatMessages, setChatMessages] = useState<ChatTimelineMessage[]>([]);
     const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
     const chatFeedRef = useRef<HTMLDivElement | null>(null);
+    const activeRequest = useRef<{
+        id: number;
+        controller: AbortController;
+    } | null>(null);
+    const requestId = useRef(0);
 
     const askAi = async (): Promise<void> => {
         const trimmedQuestion = question.trim();
 
-        if (!trimmedQuestion || isAiLoading) {
+        if (!trimmedQuestion || isAiLoading || activeRequest.current) {
             return;
         }
 
@@ -100,6 +105,15 @@ export const useWarehouseChat = ({
             "Ищу товары в локальном контексте и готовлю ответ...",
             "pending",
         );
+        const controller = new AbortController();
+        const currentRequestId = ++requestId.current;
+        activeRequest.current = {
+            id: currentRequestId,
+            controller,
+        };
+        const isCurrent = (): boolean =>
+            activeRequest.current?.id === currentRequestId
+            && !controller.signal.aborted;
 
         try {
             setIsAiLoading(true);
@@ -113,7 +127,12 @@ export const useWarehouseChat = ({
 
             warehouseAiContextService.updateProducts(availableProducts);
 
-            const answer = await warehouseAiContextService.ask(trimmedQuestion);
+            const answer = await warehouseAiContextService.ask(
+                trimmedQuestion,
+                controller.signal,
+            );
+
+            if (!isCurrent()) return;
 
             setChatMessages((currentMessages) =>
                 currentMessages.map((message) =>
@@ -133,6 +152,7 @@ export const useWarehouseChat = ({
                 message: "Складской AI добавил ответ в историю чата.",
             });
         } catch (error) {
+            if (!isCurrent()) return;
             console.error("Ошибка Ollama:", error);
 
             const errorMessage =
@@ -160,16 +180,23 @@ export const useWarehouseChat = ({
                 durationMs: 6500,
             });
         } finally {
-            setIsAiLoading(false);
+            if (isCurrent()) {
+                activeRequest.current = null;
+                setIsAiLoading(false);
+            }
         }
     };
 
     const resetAiSession = (): void => {
         const hadChatHistory = chatMessages.length > 0;
 
+        requestId.current++;
+        activeRequest.current?.controller.abort();
+        activeRequest.current = null;
         warehouseAiContextService.resetSession();
         setQuestion("");
         setChatMessages([]);
+        setIsAiLoading(false);
 
         if (hadChatHistory) {
             showToast({
@@ -192,6 +219,17 @@ export const useWarehouseChat = ({
             void askAi();
         }
     };
+
+    useEffect(() => {
+        const activeRequestRef = activeRequest;
+        const requestIdRef = requestId;
+
+        return (): void => {
+            requestIdRef.current++;
+            activeRequestRef.current?.controller.abort();
+            activeRequestRef.current = null;
+        };
+    }, []);
 
     useEffect(() => {
         if (products.length === 0) {

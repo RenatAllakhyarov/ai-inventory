@@ -72,17 +72,21 @@ export class MoySkladClient implements WarehouseSourceClient {
         this.retryDelayMs = options.retryDelayMs ?? 1000;
     }
 
-    fetchProducts = async (): Promise<WarehouseProduct[]> => {
+    fetchProducts = async (signal?: AbortSignal): Promise<WarehouseProduct[]> => {
         const response = await this.fetchResponse<MoySkladProductsResponse>(
             "/entity/product?limit=1000",
+            3,
+            signal,
         );
 
         return response.rows ?? [];
     };
 
-    fetchStocks = async (): Promise<WarehouseStock[]> => {
+    fetchStocks = async (signal?: AbortSignal): Promise<WarehouseStock[]> => {
         const response = await this.fetchResponse<MoySkladStockResponse>(
             "/report/stock/all?limit=1000",
+            3,
+            signal,
         );
         const stockRows = response.rows ?? [];
 
@@ -107,10 +111,10 @@ export class MoySkladClient implements WarehouseSourceClient {
         });
     };
 
-    fetchCatalog = async (): Promise<WarehouseProduct[]> => {
+    fetchCatalog = async (signal?: AbortSignal): Promise<WarehouseProduct[]> => {
         const [products, stocks] = await Promise.all([
-            this.fetchProducts(),
-            this.fetchStocks(),
+            this.fetchProducts(signal),
+            this.fetchStocks(signal),
         ]);
         const stockByProductId = new Map<string, number>();
 
@@ -124,12 +128,16 @@ export class MoySkladClient implements WarehouseSourceClient {
         }));
     };
 
-    checkConnection = async (): Promise<boolean> => {
+    checkConnection = async (signal?: AbortSignal): Promise<boolean> => {
         try {
-            await this.fetchResponse("/entity/product?limit=1", 3);
+            await this.fetchResponse("/entity/product?limit=1", 3, signal);
 
             return true;
-        } catch {
+        } catch (error) {
+            if (signal?.aborted) {
+                throw error;
+            }
+
             return false;
         }
     };
@@ -137,13 +145,20 @@ export class MoySkladClient implements WarehouseSourceClient {
     private fetchResponse = async <TResponse>(
         endpoint: string,
         retries = 3,
+        signal?: AbortSignal,
     ): Promise<TResponse> => {
         for (let attempt = 1; attempt <= retries; attempt++) {
             let response: Response;
 
             try {
-                response = await this.fetchImplementation(`${this.baseUrl}${endpoint}`);
+                response = await this.fetchImplementation(`${this.baseUrl}${endpoint}`, {
+                    signal,
+                });
             } catch (cause) {
+                if (signal?.aborted) {
+                    throw cause;
+                }
+
                 if (attempt === retries) {
                     throw new MoySkladClientError(
                         "network",
