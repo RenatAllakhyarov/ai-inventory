@@ -22,10 +22,55 @@ interface MoySkladStockRow {
     };
 }
 
+export type MoySkladClientErrorKind =
+    | "configuration"
+    | "network"
+    | "http"
+    | "response-parsing";
+
+export class MoySkladClientError extends Error {
+    readonly cause?: unknown;
+
+    constructor(
+        readonly kind: MoySkladClientErrorKind,
+        message: string,
+        cause?: unknown,
+    ) {
+        super(message);
+        this.name = "MoySkladClientError";
+        this.cause = cause;
+    }
+}
+
+interface MoySkladClientOptions {
+    baseUrl?: string;
+    fetchImplementation?: typeof fetch;
+    retryDelayMs?: number;
+}
+
 export class MoySkladClient implements WarehouseSourceClient {
     readonly sourceName = "МойСклад";
 
-    private readonly baseUrl = import.meta.env.VITE_MOYSKLAD_BASE_URL;
+    private readonly baseUrl: string;
+    private readonly fetchImplementation: typeof fetch;
+    private readonly retryDelayMs: number;
+
+    constructor(options: MoySkladClientOptions = {}) {
+        const baseUrl = "baseUrl" in options
+            ? options.baseUrl
+            : import.meta.env.VITE_MOYSKLAD_BASE_URL;
+
+        if (typeof baseUrl !== "string" || baseUrl.trim().length === 0) {
+            throw new MoySkladClientError(
+                "configuration",
+                "MoySklad base URL is not configured",
+            );
+        }
+
+        this.baseUrl = baseUrl;
+        this.fetchImplementation = options.fetchImplementation ?? fetch.bind(globalThis);
+        this.retryDelayMs = options.retryDelayMs ?? 1000;
+    }
 
     fetchProducts = async (): Promise<WarehouseProduct[]> => {
         const response = await this.fetchResponse<MoySkladProductsResponse>(
@@ -94,25 +139,58 @@ export class MoySkladClient implements WarehouseSourceClient {
         retries = 3,
     ): Promise<TResponse> => {
         for (let attempt = 1; attempt <= retries; attempt++) {
+            let response: Response;
+
             try {
-                const response = await fetch(`${this.baseUrl}${endpoint}`);
-
-                if (!response.ok) {
-                    const errorText = await response.text();
-
-                    throw new Error(`Ошибка API ${response.status}: ${errorText}`);
-                }
-
-                return await response.json() as TResponse;
-            } catch {
+                response = await this.fetchImplementation(`${this.baseUrl}${endpoint}`);
+            } catch (cause) {
                 if (attempt === retries) {
-                    throw new Error("Connection lost");
+                    throw new MoySkladClientError(
+                        "network",
+                        "Connection lost",
+                        cause,
+                    );
                 }
 
-                await new Promise((resolve) => setTimeout(resolve, 1000));
+                await new Promise((resolve) => setTimeout(resolve, this.retryDelayMs));
+                continue;
+            }
+
+            if (!response.ok) {
+                let errorText = "";
+
+                try {
+                    errorText = await response.text();
+                } catch (cause) {
+                    throw new MoySkladClientError(
+                        "http",
+                        `Ошибка API ${response.status}: unable to read error response`,
+                        cause,
+                    );
+                }
+
+                const httpError = new Error(
+                    `Ошибка API ${response.status}: ${errorText}`,
+                );
+
+                throw new MoySkladClientError(
+                    "http",
+                    httpError.message,
+                    httpError,
+                );
+            }
+
+            try {
+                return await response.json() as TResponse;
+            } catch (cause) {
+                throw new MoySkladClientError(
+                    "response-parsing",
+                    "Unable to parse MoySklad API response",
+                    cause,
+                );
             }
         }
 
-        throw new Error("Connection lost");
+        throw new MoySkladClientError("network", "Connection lost");
     };
 }
