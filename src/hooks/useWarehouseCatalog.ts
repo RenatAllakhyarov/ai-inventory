@@ -331,17 +331,33 @@ export const useWarehouseCatalog = ({
         }
 
         let isActive = true;
-        let latestSyncRequestId = 0;
+        let isSyncing = false;
+        let timeoutId: number | undefined;
         let activeSyncController: AbortController | null = null;
 
+        const scheduleNextSync = (): void => {
+            if (!isActive) {
+                return;
+            }
+
+            timeoutId = window.setTimeout(
+                () => {
+                    void syncProducts();
+                },
+                5 * 60 * 1000,
+            );
+        };
+
         const syncProducts = async (): Promise<void> => {
-            activeSyncController?.abort();
+            if (!isActive || isSyncing) {
+                return;
+            }
+
+            isSyncing = true;
             const controller = new AbortController();
             activeSyncController = controller;
-            const requestId = ++latestSyncRequestId;
             const isCurrent = (): boolean =>
                 isActive
-                && requestId === latestSyncRequestId
                 && !controller.signal.aborted;
 
             try {
@@ -406,21 +422,21 @@ export const useWarehouseCatalog = ({
                 if (activeSyncController === controller) {
                     activeSyncController = null;
                 }
+
+                isSyncing = false;
+                scheduleNextSync();
             }
         };
 
-        const intervalId = window.setInterval(
-            () => {
-                void syncProducts();
-            },
-            5 * 60 * 1000,
-        );
+        scheduleNextSync();
 
         return (): void => {
             isActive = false;
-            latestSyncRequestId++;
             activeSyncController?.abort();
-            window.clearInterval(intervalId);
+
+            if (timeoutId !== undefined) {
+                window.clearTimeout(timeoutId);
+            }
         };
     }, [products.length, showToast]);
 
