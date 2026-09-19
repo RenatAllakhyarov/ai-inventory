@@ -4,6 +4,7 @@ import {
 } from "@services/ProductsStorageService";
 import { WarehouseAiContextService } from "@services/WarehouseAiContextService";
 import { type ToastInput } from "@hooks/useToasts";
+import { createUuid, type IdFactory } from "@utils/functions/idFactory";
 import { type ChatTimelineMessage } from "../types";
 import {
     type KeyboardEvent,
@@ -16,17 +17,14 @@ import {
 const productsStorage = new ProductsStorageService();
 const warehouseAiContextService = new WarehouseAiContextService();
 
-let chatMessageCounter = 0;
-
 const createChatMessage = (
+    idFactory: IdFactory,
     role: ChatTimelineMessage["role"],
     content: string,
     status: ChatTimelineMessage["status"] = "complete",
 ): ChatTimelineMessage => {
-    chatMessageCounter += 1;
-
     return {
-        id: `${Date.now()}-${chatMessageCounter}`,
+        id: idFactory(),
         role,
         content,
         status,
@@ -36,6 +34,7 @@ const createChatMessage = (
 interface UseWarehouseChatOptions {
     products: WarehouseProduct[];
     showToast: (toast: ToastInput) => void;
+    idFactory?: IdFactory;
 }
 
 interface UseWarehouseChatResult {
@@ -52,6 +51,7 @@ interface UseWarehouseChatResult {
 export const useWarehouseChat = ({
     products,
     showToast,
+    idFactory = createUuid,
 }: UseWarehouseChatOptions): UseWarehouseChatResult => {
     const [question, setQuestion] = useState<string>("");
     const [chatMessages, setChatMessages] = useState<ChatTimelineMessage[]>([]);
@@ -82,14 +82,19 @@ export const useWarehouseChat = ({
 
             setChatMessages((currentMessages) => [
                 ...currentMessages,
-                createChatMessage("error", "Каталог пуст"),
+                createChatMessage(idFactory, "error", "Каталог пуст"),
             ]);
 
             return;
         }
 
-        const userMessage = createChatMessage("user", trimmedQuestion);
+        const userMessage = createChatMessage(
+            idFactory,
+            "user",
+            trimmedQuestion,
+        );
         const pendingMessage = createChatMessage(
+            idFactory,
             "assistant",
             "Ищу товары в локальном контексте и готовлю ответ...",
             "pending",

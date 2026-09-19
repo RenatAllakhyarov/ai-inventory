@@ -1,18 +1,23 @@
+import { createUuid, type IdFactory } from "@utils/functions/idFactory";
 import { type ToastMessage } from "../types";
 import { useCallback, useState } from "react";
 
 export type ToastInput = Omit<ToastMessage, "id">;
 
-let toastMessageCounter = 0;
-
-const createToastMessage = (toast: ToastInput): ToastMessage => {
-    toastMessageCounter += 1;
+const createToastMessage = (
+    idFactory: IdFactory,
+    toast: ToastInput,
+): ToastMessage => {
 
     return {
         ...toast,
-        id: `toast-${Date.now()}-${toastMessageCounter}`,
+        id: idFactory(),
     };
 };
+
+interface UseToastsOptions {
+    idFactory?: IdFactory;
+}
 
 interface UseToastsResult {
     messages: ToastMessage[];
@@ -20,7 +25,9 @@ interface UseToastsResult {
     showToast: (toast: ToastInput) => void;
 }
 
-export const useToasts = (): UseToastsResult => {
+export const useToasts = (
+    { idFactory = createUuid }: UseToastsOptions = {},
+): UseToastsResult => {
     const [messages, setMessages] = useState<ToastMessage[]>([]);
 
     const dismissToast = useCallback((id: string): void => {
@@ -42,9 +49,12 @@ export const useToasts = (): UseToastsResult => {
                 return currentMessages;
             }
 
-            return [...currentMessages, createToastMessage(toast)].slice(-4);
+            return [
+                ...currentMessages,
+                createToastMessage(idFactory, toast),
+            ].slice(-4);
         });
-    }, []);
+    }, [idFactory]);
 
     return {
         messages,
