@@ -1,5 +1,5 @@
 import { type WarehouseProduct } from "./ProductsStorageService";
-import { QwenProductsService } from "./QwenProductsService";
+import { ProductTextService } from "./ProductTextService";
 import {
     type WarehouseIndexedCatalogSnapshot,
     type WarehouseSearchField,
@@ -126,7 +126,7 @@ const compareText = (left: string, right: string): number => {
 };
 
 export class WarehouseCatalogQueryService {
-    private readonly qwenProductsService = new QwenProductsService();
+    private readonly productTextService = new ProductTextService();
     private readonly productSearchEngine = new ProductSearchEngine();
     private readonly warehouseIdbStorageService =
         new WarehouseIdbStorageService();
@@ -209,7 +209,7 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
 
     detectDeterministicPlan = (question: string): WarehouseQueryPlan | null => {
         const questionText =
-            this.qwenProductsService.normalizeSearchText(question);
+            this.productTextService.normalizeSearchText(question);
 
         const wantsCount = ["сколько", "количество", "число", "count"].some(
             (token) => questionText.includes(token),
@@ -291,7 +291,7 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
         plan: WarehouseLookupQueryPlan,
         fallbackProducts: WarehouseProduct[],
     ): Promise<WarehouseQueryResult> => {
-        const normalizedQuery = this.qwenProductsService.normalizeSearchText(
+        const normalizedQuery = this.productTextService.normalizeSearchText(
             plan.query ?? "",
         );
 
@@ -525,7 +525,7 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
                     "ТИП: products.list",
                     `ВСЕГО ТОВАРОВ: ${products.length}`,
                     "",
-                    this.qwenProductsService.prepareCompactContext(
+                    this.productTextService.prepareCompactContext(
                         selected,
                         false,
                     ),
@@ -852,7 +852,7 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
                 code: [product.code, product.externalCode]
                     .filter(Boolean)
                     .join(" "),
-                barcode: this.qwenProductsService.getBarcode(product),
+                barcode: this.productTextService.getBarcode(product),
                 stock: this.productSearchEngine.getNumericStock(product),
                 price: this.productSearchEngine.getNumericPrice(product),
                 archived: Boolean(product.archived),
@@ -881,8 +881,8 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
                     typeof filter.value === "string"
                 ) {
                     return (
-                        this.qwenProductsService.normalizeSearchText(value) ===
-                        this.qwenProductsService.normalizeSearchText(
+                        this.productTextService.normalizeSearchText(value) ===
+                        this.productTextService.normalizeSearchText(
                             filter.value,
                         )
                     );
@@ -891,10 +891,10 @@ lookup: { "type": "lookup", "query": "поисковые слова без сл�
             }
 
             if (filter.operator === "contains") {
-                return this.qwenProductsService
+                return this.productTextService
                     .normalizeSearchText(String(value))
                     .includes(
-                        this.qwenProductsService.normalizeSearchText(
+                        this.productTextService.normalizeSearchText(
                             String(filter.value),
                         ),
                     );
@@ -932,7 +932,7 @@ name | stock | price | category${includeDescription ? " | bounded description" :
 
 ТОВАРЫ:
 
-${this.qwenProductsService.prepareCompactContext(products, includeDescription)}
+${this.productTextService.prepareCompactContext(products, includeDescription)}
         `.trim();
     };
 

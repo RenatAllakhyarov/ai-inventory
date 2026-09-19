@@ -1,5 +1,5 @@
 import { type WarehouseProduct } from "./ProductsStorageService";
-import { QwenProductsService } from "./QwenProductsService";
+import { ProductTextService } from "./ProductTextService";
 
 export type WarehouseSortBy =
     | "name"
@@ -42,7 +42,7 @@ const compareText = (left: string, right: string): number =>
     left.localeCompare(right, "ru", { sensitivity: "base" });
 
 export class ProductSearchEngine {
-    private readonly qwenProductsService = new QwenProductsService();
+    private readonly productTextService = new ProductTextService();
 
     searchProducts = (
         products: WarehouseProduct[],
@@ -77,15 +77,15 @@ export class ProductSearchEngine {
         products: WarehouseProduct[],
         query?: string,
     ): ScoredProduct[] => {
-        const normalizedQuery = this.qwenProductsService.normalizeSearchText(
+        const normalizedQuery = this.productTextService.normalizeSearchText(
             query ?? "",
         );
-        const queryTokens = this.qwenProductsService.getSearchTokens(
+        const queryTokens = this.productTextService.getSearchTokens(
             query ?? "",
         );
         const scoredProducts = products.map((product, index) => {
             const searchableText =
-                this.qwenProductsService.getSearchableText(product);
+                this.productTextService.getSearchableText(product);
             let score = 0;
 
             for (const token of queryTokens) {
@@ -97,7 +97,7 @@ export class ProductSearchEngine {
             if (
                 product.name
                 && normalizedQuery.includes(
-                    this.qwenProductsService.normalizeSearchText(product.name),
+                    this.productTextService.normalizeSearchText(product.name),
                 )
             ) {
                 score += 8;
@@ -106,7 +106,7 @@ export class ProductSearchEngine {
             if (
                 product.article
                 && normalizedQuery.includes(
-                    this.qwenProductsService.normalizeSearchText(product.article),
+                    this.productTextService.normalizeSearchText(product.article),
                 )
             ) {
                 score += 6;
@@ -115,7 +115,7 @@ export class ProductSearchEngine {
             if (
                 product.code
                 && normalizedQuery.includes(
-                    this.qwenProductsService.normalizeSearchText(product.code),
+                    this.productTextService.normalizeSearchText(product.code),
                 )
             ) {
                 score += 6;
@@ -141,18 +141,18 @@ export class ProductSearchEngine {
         products: WarehouseProduct[],
         query: string,
     ): ScoredProduct[] => {
-        const queryTokens = this.qwenProductsService.getSearchTokens(query);
+        const queryTokens = this.productTextService.getSearchTokens(query);
 
         return products
             .map((product, index) => {
                 const nameTokens = new Set(
-                    this.qwenProductsService.getSearchTokens(product.name ?? ""),
+                    this.productTextService.getSearchTokens(product.name ?? ""),
                 );
                 const categoryTokens = new Set(
-                    this.qwenProductsService.getSearchTokens(product.pathName ?? ""),
+                    this.productTextService.getSearchTokens(product.pathName ?? ""),
                 );
                 const descriptionTokens = new Set(
-                    this.qwenProductsService.getSearchTokens(
+                    this.productTextService.getSearchTokens(
                         product.description ?? "",
                     ),
                 );
@@ -169,7 +169,7 @@ export class ProductSearchEngine {
                     ]
                         .filter((value): value is string => Boolean(value))
                         .flatMap((value) =>
-                            this.qwenProductsService.getSearchTokens(value),
+                            this.productTextService.getSearchTokens(value),
                         ),
                 );
                 let score = 0;
@@ -272,7 +272,7 @@ export class ProductSearchEngine {
         products: WarehouseProduct[],
         params: WarehouseSearchParams,
     ): WarehouseProduct[] => {
-        const category = this.qwenProductsService.normalizeSearchText(
+        const category = this.productTextService.normalizeSearchText(
             params.category ?? "",
         );
 
@@ -286,7 +286,7 @@ export class ProductSearchEngine {
 
             if (
                 category
-                && !this.qwenProductsService
+                && !this.productTextService
                     .normalizeSearchText(product.pathName ?? "")
                     .includes(category)
             ) {
