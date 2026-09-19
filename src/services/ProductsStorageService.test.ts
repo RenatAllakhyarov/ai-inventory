@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ProductsStorageService } from "./ProductsStorageService";
+import {
+    ProductsStorageService,
+    type WarehouseProduct,
+} from "./ProductsStorageService";
 
 const storageKey = "warehouse_products";
 
@@ -21,6 +24,20 @@ const createStorage = (): Storage => {
         length: 0,
     } as Storage;
 };
+
+const createProduct = (
+    overrides: Partial<WarehouseProduct> = {},
+): WarehouseProduct => ({
+    id: "product-1",
+    name: "Товар",
+    externalCode: "external-1",
+    salePrices: [{ value: 100 }, { value: 200 }],
+    barcodes: [
+        { ean13: "4600000000001" },
+        { code128: "CODE-128" },
+    ],
+    ...overrides,
+});
 
 describe("ProductsStorageService.getProductsFromStorage", () => {
     let storage: Storage;
@@ -62,5 +79,61 @@ describe("ProductsStorageService.getProductsFromStorage", () => {
             isInvalid: true,
         });
         expect(storage.removeItem).toHaveBeenCalledWith(storageKey);
+    });
+});
+
+describe("ProductsStorageService.compareProducts", () => {
+    const service = new ProductsStorageService();
+
+    it("returns false for equivalent products with reordered collections", () => {
+        const oldProducts = [createProduct()];
+        const newProducts = [
+            createProduct({
+                salePrices: [{ value: 200 }, { value: 100 }],
+                barcodes: [
+                    { code128: "CODE-128" },
+                    { ean13: "4600000000001" },
+                ],
+            }),
+        ];
+
+        expect(service.compareProducts(oldProducts, newProducts)).toBe(false);
+    });
+
+    it("returns true when products are added or removed", () => {
+        expect(
+            service.compareProducts(
+                [createProduct()],
+                [createProduct(), createProduct({ id: "product-2" })],
+            ),
+        ).toBe(true);
+        expect(service.compareProducts([createProduct()], [])).toBe(true);
+    });
+
+    it("returns true when the external code changes", () => {
+        expect(
+            service.compareProducts(
+                [createProduct()],
+                [createProduct({ externalCode: "external-2" })],
+            ),
+        ).toBe(true);
+    });
+
+    it("returns true when sale prices change", () => {
+        expect(
+            service.compareProducts(
+                [createProduct()],
+                [createProduct({ salePrices: [{ value: 300 }] })],
+            ),
+        ).toBe(true);
+    });
+
+    it("returns true when barcodes change", () => {
+        expect(
+            service.compareProducts(
+                [createProduct()],
+                [createProduct({ barcodes: [{ upc: "012345678905" }] })],
+            ),
+        ).toBe(true);
     });
 });
