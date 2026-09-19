@@ -72,6 +72,23 @@ export class MoySkladClient implements WarehouseSourceClient {
         });
     };
 
+    fetchCatalog = async (): Promise<WarehouseProduct[]> => {
+        const [products, stocks] = await Promise.all([
+            this.fetchProducts(),
+            this.fetchStocks(),
+        ]);
+        const stockByProductId = new Map<string, number>();
+
+        for (const stock of stocks) {
+            stockByProductId.set(stock.productId, stock.quantity);
+        }
+
+        return products.map((product) => ({
+            ...product,
+            stock: stockByProductId.get(product.id) ?? 0,
+        }));
+    };
+
     checkConnection = async (): Promise<boolean> => {
         try {
             await this.fetchResponse("/entity/product?limit=1", 3);
