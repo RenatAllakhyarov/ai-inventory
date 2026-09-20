@@ -4,6 +4,7 @@ import {
 } from "@services/ProductsStorageService";
 import { WarehouseAiContextService } from "@services/WarehouseAiContextService";
 import { type ToastInput } from "@hooks/useToasts";
+import { ERROR_TOAST_DURATION_MS } from "@utils/constants";
 import { createUuid, type IdFactory } from "@utils/functions/idFactory";
 import { type ChatTimelineMessage } from "../types";
 import {
@@ -177,7 +178,7 @@ export const useWarehouseChat = ({
                 type: "error",
                 title: "Ollama не ответила",
                 message: errorMessage,
-                durationMs: 6500,
+                durationMs: ERROR_TOAST_DURATION_MS,
             });
         } finally {
             if (isCurrent()) {
