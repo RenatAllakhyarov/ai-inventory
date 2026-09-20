@@ -461,6 +461,7 @@ ${this.productTextService.prepareCompactContext(
                     product.pathName,
                     product.stock,
                     product.salePrices?.[0]?.value,
+                    product.salePrices?.[0]?.currency,
                 ].join(":"),
             )
             .join("|");

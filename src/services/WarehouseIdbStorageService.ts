@@ -2,6 +2,10 @@ import { type WarehouseProduct } from "./ProductsStorageService";
 import { ProductTextService } from "./ProductTextService";
 import { OLLAMA_EMBEDDING_MODEL } from "@api/OllamaApi";
 import {
+    getProductPriceAmount,
+    getProductPriceCurrency,
+} from "@utils/functions/productMoney";
+import {
     BARCODES_STORE,
     CATEGORIES_STORE,
     DATABASE_NAME,
@@ -539,7 +543,7 @@ export class WarehouseIdbStorageService {
             const descriptionText = product.description?.trim() ?? "";
             const descriptionId = descriptionText ? product.id : undefined;
             const stock = this.getNumericStock(product);
-            const price = this.getNumericPrice(product);
+            const price = getProductPriceAmount(product);
 
             indexedProducts.push({
                 id: product.id,
@@ -566,7 +570,7 @@ export class WarehouseIdbStorageService {
             prices.push({
                 productId: product.id,
                 price,
-                currency: "RUB",
+                currency: getProductPriceCurrency(product),
             });
 
             if (descriptionId) {
@@ -789,16 +793,6 @@ export class WarehouseIdbStorageService {
         return typeof product.stock === "number" ? product.stock : undefined;
     };
 
-    private getNumericPrice = (
-        product: WarehouseProduct,
-    ): number | undefined => {
-        const [firstSalePrice] = product.salePrices ?? [];
-
-        return typeof firstSalePrice?.value === "number"
-            ? firstSalePrice.value / 100
-            : undefined;
-    };
-
     private getCategoryName = (categoryPath: string): string => {
         const parts = categoryPath
             .split("/")
@@ -850,6 +844,7 @@ export class WarehouseIdbStorageService {
                     product.pathName,
                     product.stock,
                     product.salePrices?.[0]?.value,
+                    product.salePrices?.[0]?.currency,
                 ].join(":"),
             )
             .join("|");

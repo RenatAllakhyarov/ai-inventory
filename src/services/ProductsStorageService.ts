@@ -12,6 +12,7 @@ export interface WarehouseProduct {
     stock?: number;
     salePrices?: Array<{
         value?: number;
+        currency?: string;
     }>;
     barcodes?: Array<{
         ean13?: string;
@@ -41,9 +42,12 @@ const isWarehouseProduct = (value: unknown): value is WarehouseProduct => {
 
 const normalizeSalePrices = (
     salePrices: WarehouseProduct["salePrices"],
-): Array<number | null> =>
+): Array<[number | null, string | null]> =>
     (salePrices ?? [])
-        .map((salePrice) => salePrice.value ?? null)
+        .map((salePrice) => [
+            salePrice.value ?? null,
+            salePrice.currency ?? null,
+        ] as [number | null, string | null])
         .sort((left, right) =>
             JSON.stringify(left).localeCompare(JSON.stringify(right)),
         );
