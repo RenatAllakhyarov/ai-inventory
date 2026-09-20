@@ -103,5 +103,23 @@ describe("ProductSearchEngine", () => {
                 salePrices: [{ value: 12300 }],
             })),
         ).toBe(123);
+        expect(
+            engine.getNumericPrice(createProduct("invalid-price", {
+                salePrices: [{ value: Number.NaN }],
+            })),
+        ).toBeUndefined();
+    });
+
+    it("filters prices using the shared normalized amount", () => {
+        const result = engine.searchProducts(
+            [
+                createProduct("included", { salePrices: [{ value: 12300 }] }),
+                createProduct("excluded", { salePrices: [{ value: 12299 }] }),
+                createProduct("invalid", { salePrices: [{ value: Number.NaN }] }),
+            ],
+            { minPrice: 123 },
+        );
+
+        expect(result.items.map((product) => product.id)).toEqual(["included"]);
     });
 });

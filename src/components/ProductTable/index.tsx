@@ -1,4 +1,5 @@
 import { type WarehouseProduct } from "@services/ProductsStorageService";
+import { formatProductMoney } from "@utils/functions/productMoney";
 import { type ReactElement } from "react";
 import "./style.css";
 
@@ -8,16 +9,6 @@ interface IProductTableProps {
     allProductsCount: number;
     products: WarehouseProduct[];
 }
-
-const getProductPrice = (product: WarehouseProduct): string => {
-    const [firstSalePrice] = product.salePrices ?? [];
-
-    if (typeof firstSalePrice?.value !== "number") {
-        return "нет";
-    }
-
-    return `${firstSalePrice.value / 100}`;
-};
 
 const getProductStock = (product: WarehouseProduct): string => {
     if (typeof product.stock !== "number") {
@@ -73,7 +64,7 @@ const ProductTable = ({
                 <article className="product-row" key={product.id}>
                     <strong>{product.name ?? "Без названия"}</strong>
                     <span>{getProductStock(product)}</span>
-                    <span>{getProductPrice(product)}</span>
+                    <span>{formatProductMoney(product)}</span>
                     <span>{product.pathName ?? "нет"}</span>
                 </article>
             ))}

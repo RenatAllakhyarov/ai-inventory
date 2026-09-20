@@ -1,4 +1,5 @@
 import { type WarehouseProduct } from "./ProductsStorageService";
+import { formatProductMoney } from "@utils/functions/productMoney";
 
 const DEFAULT_PRODUCTS_LIMIT = 15;
 
@@ -35,13 +36,7 @@ export class ProductTextService {
     };
 
     getPrice = (product: WarehouseProduct): string => {
-        const [firstSalePrice] = product.salePrices ?? [];
-
-        if (typeof firstSalePrice?.value !== "number") {
-            return "нет";
-        }
-
-        return String(firstSalePrice.value / 100);
+        return formatProductMoney(product);
     };
 
     getSearchableText = (product: WarehouseProduct): string => {

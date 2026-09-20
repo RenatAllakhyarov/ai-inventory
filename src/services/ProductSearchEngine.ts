@@ -1,5 +1,6 @@
 import { type WarehouseProduct } from "./ProductsStorageService";
 import { ProductTextService } from "./ProductTextService";
+import { getProductPriceAmount } from "@utils/functions/productMoney";
 
 export type WarehouseSortBy =
     | "name"
@@ -260,13 +261,8 @@ export class ProductSearchEngine {
     getNumericStock = (product: WarehouseProduct): number | undefined =>
         typeof product.stock === "number" ? product.stock : undefined;
 
-    getNumericPrice = (product: WarehouseProduct): number | undefined => {
-        const [firstSalePrice] = product.salePrices ?? [];
-
-        return typeof firstSalePrice?.value === "number"
-            ? firstSalePrice.value / 100
-            : undefined;
-    };
+    getNumericPrice = (product: WarehouseProduct): number | undefined =>
+        getProductPriceAmount(product);
 
     private applyStructuredFilters = (
         products: WarehouseProduct[],
