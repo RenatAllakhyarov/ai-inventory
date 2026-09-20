@@ -20,6 +20,11 @@ export const WAREHOUSE_SYSTEM_PROMPT = `
 `.trim();
 
 export const DEFAULT_TOAST_DURATION_MS = 4200;
+export const WAREHOUSE_PAGE_LIMIT = 1000;
+export const SYNC_INTERVAL_MS = 5 * 60 * 1000;
+export const ERROR_TOAST_DURATION_MS = 6500;
+export const SUCCESS_TOAST_DURATION_MS = 3200;
+export const MAX_AI_CONTEXT_PRODUCTS = 25;
 
 export const DATABASE_NAME = "ai_inventory_warehouse";
 export const DATABASE_VERSION = 3;

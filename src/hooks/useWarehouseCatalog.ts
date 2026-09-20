@@ -10,6 +10,11 @@ import {
     type WarehouseSearchResult,
 } from "@services/WarehouseProvider";
 import { type ToastInput } from "@hooks/useToasts";
+import {
+    ERROR_TOAST_DURATION_MS,
+    SUCCESS_TOAST_DURATION_MS,
+    SYNC_INTERVAL_MS,
+} from "@utils/constants";
 import { useEffect, useRef, useState } from "react";
 
 const productsStorage = new ProductsStorageService();
@@ -265,7 +270,7 @@ export const useWarehouseCatalog = ({
                         error instanceof Error
                             ? error.message
                             : "Неизвестная ошибка загрузки склада.",
-                    durationMs: 6500,
+                    durationMs: ERROR_TOAST_DURATION_MS,
                 });
             } finally {
                 if (isCurrent()) {
@@ -308,7 +313,9 @@ export const useWarehouseCatalog = ({
                     message: result
                         ? "API склада доступен."
                         : "Показываем локальные данные, если они есть.",
-                    durationMs: result ? 3200 : 6500,
+                    durationMs: result
+                        ? SUCCESS_TOAST_DURATION_MS
+                        : ERROR_TOAST_DURATION_MS,
                 });
             } catch (error) {
                 if (isCurrent()) {
@@ -344,7 +351,7 @@ export const useWarehouseCatalog = ({
                 () => {
                     void syncProducts();
                 },
-                5 * 60 * 1000,
+                SYNC_INTERVAL_MS,
             );
         };
 
@@ -416,7 +423,7 @@ export const useWarehouseCatalog = ({
                         error instanceof Error
                             ? error.message
                             : "Не удалось обновить складовой каталог.",
-                    durationMs: 6500,
+                    durationMs: ERROR_TOAST_DURATION_MS,
                 });
             } finally {
                 if (activeSyncController === controller) {

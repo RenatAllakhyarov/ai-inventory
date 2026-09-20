@@ -2,7 +2,10 @@ import { WarehouseRetrievalPlannerService } from "./WarehouseRetrievalPlannerSer
 import { WarehouseIdbStorageService } from "./WarehouseIdbStorageService";
 import { type WarehouseProduct } from "./ProductsStorageService";
 import { ProductTextService } from "./ProductTextService";
-import { WAREHOUSE_SYSTEM_PROMPT } from "@utils/constants";
+import {
+    MAX_AI_CONTEXT_PRODUCTS,
+    WAREHOUSE_SYSTEM_PROMPT,
+} from "@utils/constants";
 import {
     type WarehouseQueryResult,
     WarehouseCatalogQueryService,
@@ -16,7 +19,6 @@ import {
 
 
 const MAX_HISTORY_MESSAGES = 4;
-const MAX_CONTEXT_PRODUCTS = 25;
 const ENABLE_EMBEDDING_RETRIEVAL =
     import.meta.env.VITE_OLLAMA_EMBEDDINGS_ENABLED === "true";
 
@@ -175,7 +177,7 @@ ${warehouseFactsText}
         includeDetails: boolean,
         signal?: AbortSignal,
     ): Promise<WarehouseQueryResult> => {
-        const limit = Math.min(this.products.length, MAX_CONTEXT_PRODUCTS);
+        const limit = Math.min(this.products.length, MAX_AI_CONTEXT_PRODUCTS);
 
         const deterministicPlan =
             this.warehouseCatalogQueryService.detectDeterministicPlan(

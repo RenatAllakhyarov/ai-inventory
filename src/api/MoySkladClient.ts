@@ -4,6 +4,7 @@ import {
     type WarehouseStock,
 } from "@services/WarehouseSourceClient";
 import { getMoySkladProductIdFromHref } from "./MoySkladProductHref";
+import { WAREHOUSE_PAGE_LIMIT } from "@utils/constants";
 
 interface MoySkladProductsResponse {
     rows?: WarehouseProduct[];
@@ -74,7 +75,7 @@ export class MoySkladClient implements WarehouseSourceClient {
 
     fetchProducts = async (signal?: AbortSignal): Promise<WarehouseProduct[]> => {
         const response = await this.fetchResponse<MoySkladProductsResponse>(
-            "/entity/product?limit=1000",
+            `/entity/product?limit=${WAREHOUSE_PAGE_LIMIT}`,
             3,
             signal,
         );
@@ -84,7 +85,7 @@ export class MoySkladClient implements WarehouseSourceClient {
 
     fetchStocks = async (signal?: AbortSignal): Promise<WarehouseStock[]> => {
         const response = await this.fetchResponse<MoySkladStockResponse>(
-            "/report/stock/all?limit=1000",
+            `/report/stock/all?limit=${WAREHOUSE_PAGE_LIMIT}`,
             3,
             signal,
         );
