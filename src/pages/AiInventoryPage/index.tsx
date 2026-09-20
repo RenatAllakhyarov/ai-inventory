@@ -12,6 +12,23 @@ import { type ConnectionTone } from "../../types";
 import { type ReactElement } from "react";
 import "./style.css";
 
+interface ConnectionViewModel {
+    label: string;
+    tone: ConnectionTone;
+}
+
+const getConnectionViewModel = (
+    isConnected: boolean | null,
+): ConnectionViewModel => {
+    if (isConnected === null) {
+        return { label: "Проверка", tone: "pending" };
+    }
+
+    return isConnected
+        ? { label: "Подключено", tone: "good" }
+        : { label: "Нет связи", tone: "danger" };
+};
+
 const AiInventoryPage = (): ReactElement => {
     const { messages: toastMessages, dismissToast, showToast } = useToasts();
     const {
@@ -42,15 +59,7 @@ const AiInventoryPage = (): ReactElement => {
         handleQuestionKeyDown,
     } = useWarehouseChat({ products, showToast });
 
-    const connectionLabel =
-        isConnected === null
-            ? "Проверка"
-            : isConnected
-              ? "Подключено"
-              : "Нет связи";
-
-    const connectionTone: ConnectionTone =
-        isConnected === null ? "pending" : isConnected ? "good" : "danger";
+    const connectionViewModel = getConnectionViewModel(isConnected);
 
     const catalogLabel = isCatalogLoading
         ? "Загрузка"
@@ -68,8 +77,8 @@ const AiInventoryPage = (): ReactElement => {
         <main className="warehouse-shell">
             <SignalRail
                 sourceName={sourceName}
-                connectionLabel={connectionLabel}
-                connectionTone={connectionTone}
+                connectionLabel={connectionViewModel.label}
+                connectionTone={connectionViewModel.tone}
                 catalogLabel={catalogLabel}
                 aiContextLabel={aiContextLabel}
                 hasProducts={products.length > 0}

@@ -1,6 +1,6 @@
 import { DEFAULT_TOAST_DURATION_MS } from "@utils/constants";
 import { useEffect, type ReactElement } from "react";
-import { type ToastMessage } from "../../types";
+import { type ToastMessage, type ToastType } from "../../types";
 import "./style.css";
 
 interface IToastItemProps {
@@ -12,24 +12,12 @@ const getToastRole = (type: ToastMessage["type"]): "alert" | "status" => {
     return type === "error" ? "alert" : "status";
 };
 
-const getToastLabel = (type: ToastMessage["type"]): string => {
-    if (type === "success") {
-        return "Успешно";
-    }
-
-    if (type === "error") {
-        return "Ошибка";
-    }
-
-    if (type === "warning") {
-        return "Внимание";
-    }
-
-    if (type === "loading") {
-        return "В процессе";
-    }
-
-    return "Информация";
+const TOAST_LABELS: Record<ToastType, string> = {
+    success: "Успешно",
+    error: "Ошибка",
+    warning: "Внимание",
+    info: "Информация",
+    loading: "В процессе",
 };
 
 const ToastItem = ({ toast, onDismiss }: IToastItemProps): ReactElement => {
@@ -59,7 +47,7 @@ const ToastItem = ({ toast, onDismiss }: IToastItemProps): ReactElement => {
                 )}
                 <div className="toast-copy">
                     <span className="toast-kicker">
-                        {toast.title ?? getToastLabel(toast.type)}
+                        {toast.title ?? TOAST_LABELS[toast.type]}
                     </span>
                     <p className="toast-message">{toast.message}</p>
                 </div>
