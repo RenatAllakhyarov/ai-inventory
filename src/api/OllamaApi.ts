@@ -2,8 +2,8 @@ import {
     DEFAULT_CHAT_MODEL,
     DEFAULT_EMBEDDING_MODEL,
     OLLAMA_URL,
-    WAREHOUSE_SYSTEM_PROMPT,
 } from "@utils/constants";
+import { WAREHOUSE_SYSTEM_PROMPT } from "@utils/aiPrompts";
 
 export const OLLAMA_CHAT_MODEL =
     import.meta.env.VITE_OLLAMA_CHAT_MODEL ?? DEFAULT_CHAT_MODEL;

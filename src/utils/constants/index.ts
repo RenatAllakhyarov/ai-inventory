@@ -3,21 +3,6 @@ export const DEFAULT_CHAT_MODEL = "gemma3:4b";
 export const DEFAULT_EMBEDDING_MODEL = "nomic-embed-text";
 export const QWEN_CHAT_MODEL_ALTERNATIVE = "qwen3:4b";
 
-export const WAREHOUSE_SYSTEM_PROMPT = `
-Ты — помощник по складу.
-
-Отвечай только на основании переданных данных о товарах.
-
-Не придумывай товары.
-
-Не придумывай цены.
-
-Не придумывай остатки.
-
-Если данных недостаточно, прямо скажи об этом.
-
-Отвечай на русском языке.
-`.trim();
 
 export const DEFAULT_TOAST_DURATION_MS = 4200;
 export const WAREHOUSE_PAGE_LIMIT = 1000;
