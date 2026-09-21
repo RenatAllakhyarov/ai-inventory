@@ -121,9 +121,12 @@ export interface WarehouseTermMatch {
 }
 
 export class WarehouseIdbStorageError extends Error {
-    constructor(message: string) {
+    readonly cause?: unknown;
+
+    constructor(message: string, cause?: unknown) {
         super(message);
         this.name = "WarehouseIdbStorageError";
+        this.cause = cause;
     }
 }
 
@@ -351,6 +354,18 @@ export class WarehouseIdbStorageService {
             "readwrite",
         );
 
+        const abortOnWriteFailure = <TValue>(
+            request: IDBRequest<TValue>,
+        ): void => {
+            request.onerror = () => {
+                try {
+                    transaction.abort();
+                } catch {
+                    // The browser may already be aborting the transaction.
+                }
+            };
+        };
+
         for (const storeName of [
             PRODUCTS_STORE,
             INDEXED_PRODUCTS_STORE,
@@ -362,7 +377,7 @@ export class WarehouseIdbStorageService {
             BARCODES_STORE,
             SEARCH_TERMS_STORE,
         ]) {
-            transaction.objectStore(storeName).clear();
+            abortOnWriteFailure(transaction.objectStore(storeName).clear());
         }
 
         const putAll = <TRecord>(
@@ -371,7 +386,7 @@ export class WarehouseIdbStorageService {
         ): void => {
             const store = transaction.objectStore(storeName);
             for (const record of records) {
-                store.put(record);
+                abortOnWriteFailure(store.put(record));
             }
         };
 
@@ -388,25 +403,32 @@ export class WarehouseIdbStorageService {
         const now = Date.now();
         const metaStore = transaction.objectStore(META_STORE);
 
-        metaStore.put({
+        abortOnWriteFailure(metaStore.put({
             name: "lastProductSyncAt",
             value: now,
             updatedAt: now,
-        } satisfies WarehouseMetaRecord);
+        } satisfies WarehouseMetaRecord));
 
-        metaStore.put({
+        abortOnWriteFailure(metaStore.put({
             name: "productSignature",
             value: this.getProductsSignature(products),
             updatedAt: now,
-        } satisfies WarehouseMetaRecord);
+        } satisfies WarehouseMetaRecord));
 
-        metaStore.put({
+        abortOnWriteFailure(metaStore.put({
             name: "categoriesCount",
             value: indexedCatalog.categories.length,
             updatedAt: now,
-        } satisfies WarehouseMetaRecord);
+        } satisfies WarehouseMetaRecord));
 
-        await transactionToPromise(transaction);
+        try {
+            await transactionToPromise(transaction);
+        } catch (cause) {
+            throw new WarehouseIdbStorageError(
+                "Не удалось заменить каталог IndexedDB",
+                cause,
+            );
+        }
     };
 
     getIndexedCatalogSnapshot =
