@@ -73,16 +73,32 @@ const AiInventoryPage = (): ReactElement => {
           ? "Локальный каталог готов"
           : "Нет данных для ответа";
 
+    const signals = {
+        sourceName,
+        connectionLabel: connectionViewModel.label,
+        connectionTone: connectionViewModel.tone,
+        catalogLabel,
+        aiContextLabel,
+        hasProducts: products.length > 0,
+    };
+    const chatState = {
+        modelName: OLLAMA_CHAT_MODEL,
+        productsCount: products.length,
+        question,
+        chatMessages,
+        isAiLoading,
+        chatFeedRef,
+    };
+    const chatActions = {
+        onQuestionChange: setQuestion,
+        onQuestionKeyDown: handleQuestionKeyDown,
+        onAsk: askAi,
+        onReset: resetAiSession,
+    };
+
     return (
         <main className="warehouse-shell">
-            <SignalRail
-                sourceName={sourceName}
-                connectionLabel={connectionViewModel.label}
-                connectionTone={connectionViewModel.tone}
-                catalogLabel={catalogLabel}
-                aiContextLabel={aiContextLabel}
-                hasProducts={products.length > 0}
-            />
+            <SignalRail signals={signals} />
             <section className="workspace-grid">
                 <div className="inventory-workspace">
                     <header className="section-header">
@@ -119,18 +135,7 @@ const AiInventoryPage = (): ReactElement => {
                         products={searchResult.items}
                     />
                 </div>
-                <ChatConsole
-                    modelName={OLLAMA_CHAT_MODEL}
-                    productsCount={products.length}
-                    question={question}
-                    chatMessages={chatMessages}
-                    isAiLoading={isAiLoading}
-                    chatFeedRef={chatFeedRef}
-                    onQuestionChange={setQuestion}
-                    onQuestionKeyDown={handleQuestionKeyDown}
-                    onAsk={askAi}
-                    onReset={resetAiSession}
-                />
+                <ChatConsole chatState={chatState} chatActions={chatActions} />
             </section>
             <ToastViewport messages={toastMessages} onDismiss={dismissToast} />
         </main>
