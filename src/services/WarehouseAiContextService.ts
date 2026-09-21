@@ -3,7 +3,9 @@ import { WarehouseIdbStorageService } from "./WarehouseIdbStorageService";
 import { type WarehouseProduct } from "./ProductsStorageService";
 import { ProductTextService } from "./ProductTextService";
 import {
+    EMBEDDING_BATCH_SIZE,
     MAX_AI_CONTEXT_PRODUCTS,
+    MAX_EMBEDDING_PRODUCT_TEXT_LENGTH,
     WAREHOUSE_SYSTEM_PROMPT,
 } from "@utils/constants";
 import {
@@ -26,6 +28,18 @@ interface ProductEmbedding {
     productId: string;
     embedding: number[];
 }
+
+interface ProductEmbeddingInput {
+    productId: string;
+    input: string;
+    productSignature: string;
+}
+
+export const getBoundedEmbeddingInput = (input: string): string =>
+    input.slice(0, MAX_EMBEDDING_PRODUCT_TEXT_LENGTH);
+
+export const getProductEmbeddingFingerprint = (input: string): string =>
+    `${input.length}:${input}`;
 
 export class WarehouseAiContextService {
     private products: WarehouseProduct[] = [];
@@ -371,62 +385,111 @@ ${this.productTextService.prepareCompactContext(
     private ensureProductEmbeddings = async (
         signal?: AbortSignal,
     ): Promise<void> => {
-        if (this.productEmbeddings.length > 0) {
+        if (this.productEmbeddings.length > 0 || this.products.length === 0) {
             return;
         }
 
+        const embeddingInputs = this.getProductEmbeddingInputs();
+        const embeddingsByProductId = new Map<string, ProductEmbedding>();
+
         try {
             const storedEmbeddings =
-                await this.warehouseIdbStorageService.getEmbeddings(
-                    this.productsSignature,
-                );
+                await this.warehouseIdbStorageService.getEmbeddingsByModel();
 
             this.throwIfAborted(signal);
 
-            if (storedEmbeddings.length > 0) {
-                this.productEmbeddings = storedEmbeddings.map((record) => ({
-                    productId: record.productId,
-                    embedding: record.embedding,
-                }));
-                return;
+            const storedEmbeddingsByProductId = new Map(
+                storedEmbeddings.map((record) => [record.productId, record]),
+            );
+
+            for (const input of embeddingInputs) {
+                const storedEmbedding = storedEmbeddingsByProductId.get(
+                    input.productId,
+                );
+
+                if (
+                    storedEmbedding
+                    && storedEmbedding.productSignature === input.productSignature
+                ) {
+                    embeddingsByProductId.set(input.productId, {
+                        productId: input.productId,
+                        embedding: storedEmbedding.embedding,
+                    });
+                }
             }
         } catch (error) {
             console.warn("IndexedDB embedding load fallback:", error);
         }
 
-        const inputs = this.products.map((product) =>
-            this.productTextService.getSearchableText(product),
+        const missingInputs = embeddingInputs.filter(
+            (input) => !embeddingsByProductId.has(input.productId),
         );
-        const embeddings = await fetchOllamaEmbedApi(inputs, signal);
 
-        this.throwIfAborted(signal);
+        for (
+            let batchStart = 0;
+            batchStart < missingInputs.length;
+            batchStart += EMBEDDING_BATCH_SIZE
+        ) {
+            this.throwIfAborted(signal);
 
-        this.productEmbeddings = embeddings
-            .map((embedding, index) => {
-                const product = this.products[index];
-                if (!product) {
-                    return null;
-                }
-
-                return {
-                    productId: product.id,
-                    embedding,
-                };
-            })
-            .filter((item): item is ProductEmbedding => item !== null);
-
-        try {
-            await this.warehouseIdbStorageService.replaceEmbeddings(
-                this.productEmbeddings.map((record) => ({
-                    ...record,
-                    productSignature: this.productsSignature,
-                    model: OLLAMA_EMBEDDING_MODEL,
-                    updatedAt: Date.now(),
-                })),
+            const batch = missingInputs.slice(
+                batchStart,
+                batchStart + EMBEDDING_BATCH_SIZE,
             );
-        } catch (error) {
-            console.warn("IndexedDB embedding save fallback:", error);
+            const embeddings = await fetchOllamaEmbedApi(
+                batch.map((input) => input.input),
+                signal,
+            );
+
+            this.throwIfAborted(signal);
+
+            if (embeddings.length !== batch.length) {
+                throw new Error("Ollama returned an incomplete embedding batch");
+            }
+
+            const records = batch.map((input, index) => ({
+                productId: input.productId,
+                embedding: embeddings[index] as number[],
+                productSignature: input.productSignature,
+                model: OLLAMA_EMBEDDING_MODEL,
+                updatedAt: Date.now(),
+            }));
+
+            try {
+                await this.warehouseIdbStorageService.upsertEmbeddings(records);
+            } catch (error) {
+                console.warn("IndexedDB embedding save fallback:", error);
+            }
+
+            for (const record of records) {
+                embeddingsByProductId.set(record.productId, {
+                    productId: record.productId,
+                    embedding: record.embedding,
+                });
+            }
         }
+
+        if (embeddingsByProductId.size !== embeddingInputs.length) {
+            throw new Error("Product embedding refresh is incomplete");
+        }
+
+        this.productEmbeddings = embeddingInputs.map((input) =>
+            embeddingsByProductId.get(input.productId) as ProductEmbedding,
+        );
+    };
+
+    private getProductEmbeddingInputs = (): ProductEmbeddingInput[] => {
+        return this.products.map((product) => {
+            const input = getBoundedEmbeddingInput(
+                this.productTextService.getSearchableText(product),
+            );
+
+            return {
+                productId: product.id,
+                input,
+                productSignature: getProductEmbeddingFingerprint(input),
+            };
+        });
     };
 
     private mergeProducts = (
