@@ -25,6 +25,8 @@ export const SYNC_INTERVAL_MS = 5 * 60 * 1000;
 export const ERROR_TOAST_DURATION_MS = 6500;
 export const SUCCESS_TOAST_DURATION_MS = 3200;
 export const MAX_AI_CONTEXT_PRODUCTS = 25;
+export const EMBEDDING_BATCH_SIZE = 20;
+export const MAX_EMBEDDING_PRODUCT_TEXT_LENGTH = 2000;
 
 export const DATABASE_NAME = "ai_inventory_warehouse";
 export const DATABASE_VERSION = 3;

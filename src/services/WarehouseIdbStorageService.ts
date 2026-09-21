@@ -475,23 +475,18 @@ export class WarehouseIdbStorageService {
         await transactionToPromise(transaction);
     };
 
-    getEmbeddings = async (
-        productSignature: string,
+    getEmbeddingsByModel = async (
+        model = OLLAMA_EMBEDDING_MODEL,
     ): Promise<WarehouseEmbeddingRecord[]> => {
         const database = await this.open();
         const transaction = database.transaction(EMBEDDINGS_STORE, "readonly");
         const store = transaction.objectStore(EMBEDDINGS_STORE);
 
-        if (store.indexNames.contains("signatureModel")) {
+        if (store.indexNames.contains("model")) {
             return requestToPromise(
                 store
-                    .index("signatureModel")
-                    .getAll(
-                        IDBKeyRange.only([
-                            productSignature,
-                            OLLAMA_EMBEDDING_MODEL,
-                        ]),
-                    ),
+                    .index("model")
+                    .getAll(IDBKeyRange.only(model)),
             ) as Promise<WarehouseEmbeddingRecord[]>;
         }
 
@@ -499,11 +494,25 @@ export class WarehouseIdbStorageService {
             store.getAll(),
         )) as WarehouseEmbeddingRecord[];
 
-        return records.filter(
-            (record) =>
-                record.productSignature === productSignature &&
-                record.model === OLLAMA_EMBEDDING_MODEL,
-        );
+        return records.filter((record) => record.model === model);
+    };
+
+    upsertEmbeddings = async (
+        records: WarehouseEmbeddingRecord[],
+    ): Promise<void> => {
+        if (records.length === 0) {
+            return;
+        }
+
+        const database = await this.open();
+        const transaction = database.transaction(EMBEDDINGS_STORE, "readwrite");
+        const store = transaction.objectStore(EMBEDDINGS_STORE);
+
+        for (const record of records) {
+            store.put(record);
+        }
+
+        await transactionToPromise(transaction);
     };
 
     replaceEmbeddings = async (
