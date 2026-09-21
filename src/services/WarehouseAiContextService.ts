@@ -41,6 +41,73 @@ export const getBoundedEmbeddingInput = (input: string): string =>
 export const getProductEmbeddingFingerprint = (input: string): string =>
     `${input.length}:${input}`;
 
+const FNV_OFFSET_BASIS = 0xcbf29ce484222325n;
+const FNV_PRIME = 0x100000001b3n;
+const FNV_HASH_WIDTH = 16;
+
+interface CatalogSignatureProduct {
+    id: string;
+    name: string | null;
+    description: string | null;
+    code: string | null;
+    externalCode: string | null;
+    article: string | null;
+    pathName: string | null;
+    stock: number | null;
+    salePriceValue: number | null;
+    salePriceCurrency: string | null;
+}
+
+const normalizeSignatureString = (value: unknown): string | null =>
+    typeof value === "string" ? value : null;
+
+const normalizeSignatureNumber = (value: unknown): number | null =>
+    typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const getCatalogSignatureProduct = (
+    product: WarehouseProduct,
+): CatalogSignatureProduct => {
+    const [firstSalePrice] = product.salePrices ?? [];
+
+    return {
+        id: product.id,
+        name: normalizeSignatureString(product.name),
+        description: normalizeSignatureString(product.description),
+        code: normalizeSignatureString(product.code),
+        externalCode: normalizeSignatureString(product.externalCode),
+        article: normalizeSignatureString(product.article),
+        pathName: normalizeSignatureString(product.pathName),
+        stock: normalizeSignatureNumber(product.stock),
+        salePriceValue: normalizeSignatureNumber(firstSalePrice?.value),
+        salePriceCurrency: normalizeSignatureString(firstSalePrice?.currency),
+    };
+};
+
+const updateFnvHash = (hash: bigint, value: string): bigint => {
+    let nextHash = hash;
+
+    for (let index = 0; index < value.length; index += 1) {
+        nextHash ^= BigInt(value.charCodeAt(index));
+        nextHash = BigInt.asUintN(64, nextHash * FNV_PRIME);
+    }
+
+    return nextHash;
+};
+
+export const getProductsSignature = (products: WarehouseProduct[]): string => {
+    const serializedProducts = products
+        .map((product) => JSON.stringify(getCatalogSignatureProduct(product)))
+        .sort();
+    let hash = FNV_OFFSET_BASIS;
+
+    for (const serializedProduct of serializedProducts) {
+        hash = updateFnvHash(hash, String(serializedProduct.length));
+        hash = updateFnvHash(hash, serializedProduct);
+    }
+
+    return hash.toString(16).padStart(FNV_HASH_WIDTH, "0");
+};
+
 export class WarehouseAiContextService {
     private products: WarehouseProduct[] = [];
     private productsSignature = "";
@@ -55,7 +122,7 @@ export class WarehouseAiContextService {
     private sessionMessages: OllamaChatMessage[] = [];
 
     updateProducts = (products: WarehouseProduct[]): void => {
-        const nextSignature = this.getProductsSignature(products);
+        const nextSignature = getProductsSignature(products);
 
         if (nextSignature !== this.productsSignature) {
             this.productEmbeddings = [];
@@ -509,25 +576,6 @@ ${this.productTextService.prepareCompactContext(
         }
 
         return [...productsById.values()].slice(0, limit);
-    };
-
-    private getProductsSignature = (products: WarehouseProduct[]): string => {
-        return products
-            .map((product) =>
-                [
-                    product.id,
-                    product.name,
-                    product.description,
-                    product.code,
-                    product.externalCode,
-                    product.article,
-                    product.pathName,
-                    product.stock,
-                    product.salePrices?.[0]?.value,
-                    product.salePrices?.[0]?.currency,
-                ].join(":"),
-            )
-            .join("|");
     };
 
     private throwIfAborted = (signal?: AbortSignal): void => {
