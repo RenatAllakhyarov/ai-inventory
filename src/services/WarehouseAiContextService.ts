@@ -6,8 +6,8 @@ import {
     EMBEDDING_BATCH_SIZE,
     MAX_AI_CONTEXT_PRODUCTS,
     MAX_EMBEDDING_PRODUCT_TEXT_LENGTH,
-    WAREHOUSE_SYSTEM_PROMPT,
 } from "@utils/constants";
+import { WAREHOUSE_SYSTEM_PROMPT } from "@utils/aiPrompts";
 import {
     type WarehouseQueryResult,
     WarehouseCatalogQueryService,
