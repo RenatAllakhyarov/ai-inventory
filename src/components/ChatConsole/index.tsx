@@ -3,31 +3,41 @@ import { type KeyboardEvent, type ReactElement, type RefObject } from "react";
 import { type ChatTimelineMessage } from "../../types";
 import "./style.css";
 
-interface IChatConsoleProps {
+interface ChatConsoleState {
     modelName: string;
     productsCount: number;
     question: string;
     chatMessages: ChatTimelineMessage[];
     isAiLoading: boolean;
     chatFeedRef: RefObject<HTMLDivElement | null>;
+}
+
+interface ChatConsoleActions {
     onQuestionChange: (value: string) => void;
     onQuestionKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
     onAsk: () => Promise<void>;
     onReset: () => void;
 }
 
+interface IChatConsoleProps {
+    chatState: ChatConsoleState;
+    chatActions: ChatConsoleActions;
+}
+
 const ChatConsole = ({
-    modelName,
-    productsCount,
-    question,
-    chatMessages,
-    isAiLoading,
-    chatFeedRef,
-    onQuestionChange,
-    onQuestionKeyDown,
-    onAsk,
-    onReset,
+    chatState,
+    chatActions,
 }: IChatConsoleProps): ReactElement => {
+    const {
+        modelName,
+        productsCount,
+        question,
+        chatMessages,
+        isAiLoading,
+        chatFeedRef,
+    } = chatState;
+    const { onQuestionChange, onQuestionKeyDown, onAsk, onReset } =
+        chatActions;
     const hasChatMessages = chatMessages.length > 0;
 
     const isAskDisabled =
