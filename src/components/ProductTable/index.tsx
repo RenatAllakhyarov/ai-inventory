@@ -1,6 +1,6 @@
 import { type WarehouseProduct } from "@services/ProductsStorageService";
 import { formatProductMoney } from "@utils/functions/productMoney";
-import { type ReactElement } from "react";
+import { type ReactElement, type ReactNode } from "react";
 import "./style.css";
 
 interface IProductTableProps {
@@ -16,6 +16,29 @@ const getProductStock = (product: WarehouseProduct): string => {
     }
 
     return String(product.stock);
+};
+
+interface IProductTableEmptyStateProps {
+    title: string;
+    children: ReactNode;
+    isLoading?: boolean;
+}
+
+const ProductTableEmptyState = ({
+    title,
+    children,
+    isLoading = false,
+}: IProductTableEmptyStateProps): ReactElement => {
+    const className = isLoading
+        ? "empty-state empty-state--loading"
+        : "empty-state";
+
+    return (
+        <div className={className}>
+            <strong>{title}</strong>
+            <span>{children}</span>
+        </div>
+    );
 };
 
 const ProductTable = ({
@@ -35,30 +58,21 @@ const ProductTable = ({
                 <span>Категория</span>
             </div>
             {isCatalogLoading && (
-                <div className="empty-state empty-state--loading">
-                    <strong>Загружаем каталог</strong>
-                    <span>
-                        Проверяем локальные источники и {sourceName}.
-                    </span>
-                </div>
+                <ProductTableEmptyState title="Загружаем каталог" isLoading>
+                    Проверяем локальные источники и {sourceName}.
+                </ProductTableEmptyState>
             )}
             {!isCatalogLoading && !hasProducts && (
-                <div className="empty-state">
-                    <strong>Каталог пока не загружен</strong>
-                    <span>
-                        Когда появятся данные из источника {sourceName} или localStorage,
-                        здесь будет рабочий список товаров.
-                    </span>
-                </div>
+                <ProductTableEmptyState title="Каталог пока не загружен">
+                    Когда появятся данные из источника {sourceName} или
+                    localStorage, здесь будет рабочий список товаров.
+                </ProductTableEmptyState>
             )}
             {hasProducts && products.length === 0 && (
-                <div className="empty-state">
-                    <strong>По фильтрам ничего не найдено</strong>
-                    <span>
-                        Попробуй очистить поиск, выбрать другую категорию или
-                        показать товары без остатка.
-                    </span>
-                </div>
+                <ProductTableEmptyState title="По фильтрам ничего не найдено">
+                    Попробуй очистить поиск, выбрать другую категорию или
+                    показать товары без остатка.
+                </ProductTableEmptyState>
             )}
             {products.map((product) => (
                 <article className="product-row" key={product.id}>

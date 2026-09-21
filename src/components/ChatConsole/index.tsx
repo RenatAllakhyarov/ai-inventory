@@ -1,5 +1,10 @@
 import ChatMessage from "../ChatMessage";
-import { type KeyboardEvent, type ReactElement, type RefObject } from "react";
+import {
+    type ChangeEvent,
+    type KeyboardEvent,
+    type ReactElement,
+    type RefObject,
+} from "react";
 import { type ChatTimelineMessage } from "../../types";
 import "./style.css";
 
@@ -24,6 +29,21 @@ interface IChatConsoleProps {
     chatActions: ChatConsoleActions;
 }
 
+const getAskButtonLabel = (isAiLoading: boolean): string => {
+    return isAiLoading ? "Отвечаю..." : "Спросить склад";
+};
+
+const ChatEmptyState = (): ReactElement => {
+    return (
+        <div className="chat-empty">
+            <strong>Спроси по остаткам, ценам или категориям</strong>
+            <span>
+                Ответ будет построен только на данных текущего каталога.
+            </span>
+        </div>
+    );
+};
+
 const ChatConsole = ({
     chatState,
     chatActions,
@@ -47,6 +67,14 @@ const ChatConsole = ({
         void onAsk();
     };
 
+    const handleQuestionChange = (
+        event: ChangeEvent<HTMLInputElement>,
+    ): void => {
+        onQuestionChange(event.target.value);
+    };
+
+    const askButtonLabel = getAskButtonLabel(isAiLoading);
+
     return (
         <aside className="chat-console" aria-label="Чат со складом">
             <header className="section-header section-header--chat">
@@ -66,17 +94,7 @@ const ChatConsole = ({
                 </strong>
             </div>
             <div className="chat-feed" ref={chatFeedRef}>
-                {!hasChatMessages && (
-                    <div className="chat-empty">
-                        <strong>
-                            Спроси по остаткам, ценам или категориям
-                        </strong>
-                        <span>
-                            Ответ будет построен только на данных текущего
-                            каталога.
-                        </span>
-                    </div>
-                )}
+                {!hasChatMessages && <ChatEmptyState />}
                 {chatMessages.map((message) => (
                     <ChatMessage key={message.id} message={message} />
                 ))}
@@ -85,9 +103,7 @@ const ChatConsole = ({
                 <input
                     type="text"
                     value={question}
-                    onChange={(event) => {
-                        onQuestionChange(event.target.value);
-                    }}
+                    onChange={handleQuestionChange}
                     onKeyDown={onQuestionKeyDown}
                     placeholder="Например: что закончилось?"
                     disabled={isAiLoading}
@@ -99,7 +115,7 @@ const ChatConsole = ({
                         onClick={handleAskClick}
                         disabled={isAskDisabled}
                     >
-                        {isAiLoading ? "Отвечаю..." : "Спросить склад"}
+                        {askButtonLabel}
                     </button>
                     <button
                         className="secondary-action"
