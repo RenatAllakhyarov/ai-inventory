@@ -15,6 +15,7 @@ vi.mock("@api/OllamaApi", () => ({
 import {
     getBoundedEmbeddingInput,
     getProductEmbeddingFingerprint,
+    getProductsSignature,
     WarehouseAiContextService,
 } from "./WarehouseAiContextService";
 import { ProductTextService } from "./ProductTextService";
@@ -172,5 +173,53 @@ describe("WarehouseAiContextService embeddings", () => {
 
         expect(fetchOllamaEmbedApiMock).toHaveBeenCalledTimes(1);
         expect(upsertEmbeddings).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe("WarehouseAiContextService catalog signature", () => {
+    it("is repeatable and independent of catalog product ordering", () => {
+        const products = [
+            { id: "first", name: "Первый", stock: 1 },
+            { id: "second", name: "Второй", stock: 2 },
+        ];
+
+        expect(getProductsSignature(products)).toBe(getProductsSignature(products));
+        expect(getProductsSignature(products)).toBe(
+            getProductsSignature([...products].reverse()),
+        );
+    });
+
+    it("does not confuse delimiter-containing values with another field layout", () => {
+        const valuesWithDelimiters = [{
+            id: "product",
+            name: "name:description|code",
+            description: "article",
+        }];
+        const rearrangedValues = [{
+            id: "product",
+            name: "name",
+            description: "description|code:article",
+        }];
+
+        expect(getProductsSignature(valuesWithDelimiters)).not.toBe(
+            getProductsSignature(rearrangedValues),
+        );
+    });
+
+    it("changes when a signature-relevant product value changes", () => {
+        const products = [{
+            id: "product",
+            stock: 1,
+            salePrices: [{ value: 100 }],
+        }];
+        const changedProducts = [{
+            id: "product",
+            stock: 2,
+            salePrices: [{ value: 100 }],
+        }];
+
+        expect(getProductsSignature(products)).not.toBe(
+            getProductsSignature(changedProducts),
+        );
     });
 });
