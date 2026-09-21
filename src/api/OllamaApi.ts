@@ -29,6 +29,35 @@ interface OllamaEmbedResponse {
     embeddings: number[][];
 }
 
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isOllamaChatResponse = (
+    value: unknown,
+): value is OllamaResponse => {
+    if (!isRecord(value) || !isRecord(value.message)) {
+        return false;
+    }
+
+    return typeof value.message.content === "string";
+};
+
+const isOllamaEmbedResponse = (
+    value: unknown,
+): value is OllamaEmbedResponse => {
+    if (!isRecord(value) || !Array.isArray(value.embeddings)) {
+        return false;
+    }
+
+    return value.embeddings.every(
+        (embedding) =>
+            Array.isArray(embedding)
+            && embedding.every(
+                (value) => typeof value === "number" && Number.isFinite(value),
+            ),
+    );
+};
+
 export const fetchOllamaChatApi = async (
     messages: OllamaChatMessage[],
     signal?: AbortSignal,
@@ -56,7 +85,13 @@ export const fetchOllamaChatApi = async (
         throw new Error(`Ошибка Ollama API ${response.status}: ${errorText}`);
     }
 
-    const data: OllamaResponse = await response.json();
+    const data: unknown = await response.json();
+
+    if (!isOllamaChatResponse(data)) {
+        throw new Error(
+            "Invalid Ollama chat response: expected message.content to be a string",
+        );
+    }
 
     return data.message.content;
 };
@@ -85,7 +120,13 @@ export const fetchOllamaEmbedApi = async (
         );
     }
 
-    const data: OllamaEmbedResponse = await response.json();
+    const data: unknown = await response.json();
+
+    if (!isOllamaEmbedResponse(data)) {
+        throw new Error(
+            "Invalid Ollama embedding response: expected numeric embedding arrays",
+        );
+    }
 
     return data.embeddings;
 };
