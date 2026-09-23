@@ -12,6 +12,7 @@ export interface WarehouseProduct {
     stock?: number;
     salePrices?: Array<{
         value?: number;
+        currency?: string;
     }>;
     barcodes?: Array<{
         ean13?: string;
@@ -20,19 +21,97 @@ export interface WarehouseProduct {
     }>;
 }
 
+export interface ProductsStorageReadResult {
+    products: WarehouseProduct[];
+    isInvalid: boolean;
+}
+
+const isWarehouseProduct = (value: unknown): value is WarehouseProduct => {
+    if (
+        typeof value !== "object"
+        || value === null
+        || Array.isArray(value)
+    ) {
+        return false;
+    }
+
+    const product = value as { id?: unknown };
+
+    return typeof product.id === "string" && product.id.trim().length > 0;
+};
+
+const normalizeSalePrices = (
+    salePrices: WarehouseProduct["salePrices"],
+): Array<[number | null, string | null]> =>
+    (salePrices ?? [])
+        .map((salePrice) => [
+            salePrice.value ?? null,
+            salePrice.currency ?? null,
+        ] as [number | null, string | null])
+        .sort((left, right) =>
+            JSON.stringify(left).localeCompare(JSON.stringify(right)),
+        );
+
+const normalizeBarcodes = (
+    barcodes: WarehouseProduct["barcodes"],
+): Array<[string | null, string | null, string | null]> =>
+    (barcodes ?? [])
+        .map((barcode) => [
+            barcode.ean13 ?? null,
+            barcode.code128 ?? null,
+            barcode.upc ?? null,
+        ] as [string | null, string | null, string | null])
+        .sort((left, right) =>
+            JSON.stringify(left).localeCompare(JSON.stringify(right)),
+        );
+
+const getProductFingerprint = (product: WarehouseProduct): string =>
+    JSON.stringify({
+        id: product.id,
+        name: product.name ?? null,
+        description: product.description ?? null,
+        code: product.code ?? null,
+        externalCode: product.externalCode ?? null,
+        archived: product.archived ?? null,
+        article: product.article ?? null,
+        pathName: product.pathName ?? null,
+        stock: product.stock ?? null,
+        salePrices: normalizeSalePrices(product.salePrices),
+        barcodes: normalizeBarcodes(product.barcodes),
+    });
+
 export class ProductsStorageService {
     saveProductsToStorage = (products: WarehouseProduct[]): void => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(products));
     };
 
-    getProductsFromStorage = (): WarehouseProduct[] => {
+    getProductsFromStorage = (): ProductsStorageReadResult => {
         const data = localStorage.getItem(STORAGE_KEY);
 
         if (!data) {
-            return [];
+            return {
+                products: [],
+                isInvalid: false,
+            };
         }
 
-        return JSON.parse(data) as WarehouseProduct[];
+        try {
+            const products: unknown = JSON.parse(data);
+
+            if (
+                !Array.isArray(products)
+                || !products.every(isWarehouseProduct)
+            ) {
+                return this.clearInvalidProducts();
+            }
+
+            return {
+                products,
+                isInvalid: false,
+            };
+        } catch {
+            return this.clearInvalidProducts();
+        }
     };
 
     compareProducts = (
@@ -43,28 +122,31 @@ export class ProductsStorageService {
             return true;
         }
 
-        for (const newProduct of newProducts) {
-            const oldProduct = oldProducts.find(
-                (item) => item.id === newProduct.id,
-            );
+        const previousProductsById = new Map(
+            oldProducts.map((product) => [product.id, product]),
+        );
 
-            if (!oldProduct) {
-                return true;
-            }
+        for (const newProduct of newProducts) {
+            const oldProduct = previousProductsById.get(newProduct.id);
 
             if (
-                oldProduct.name !== newProduct.name ||
-                oldProduct.description !== newProduct.description ||
-                oldProduct.code !== newProduct.code ||
-                oldProduct.archived !== newProduct.archived ||
-                oldProduct.article !== newProduct.article ||
-                oldProduct.pathName !== newProduct.pathName ||
-                oldProduct.stock !== newProduct.stock
+                !oldProduct
+                || getProductFingerprint(oldProduct)
+                    !== getProductFingerprint(newProduct)
             ) {
                 return true;
             }
         }
 
         return false;
+    };
+
+    private clearInvalidProducts = (): ProductsStorageReadResult => {
+        localStorage.removeItem(STORAGE_KEY);
+
+        return {
+            products: [],
+            isInvalid: true,
+        };
     };
 }

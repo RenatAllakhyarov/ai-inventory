@@ -1,8 +1,13 @@
 import { WarehouseRetrievalPlannerService } from "./WarehouseRetrievalPlannerService";
 import { WarehouseIdbStorageService } from "./WarehouseIdbStorageService";
 import { type WarehouseProduct } from "./ProductsStorageService";
-import { QwenProductsService } from "./QwenProductsService";
-import { WAREHOUSE_SYSTEM_PROMPT } from "@utils/constants";
+import { ProductTextService } from "./ProductTextService";
+import {
+    EMBEDDING_BATCH_SIZE,
+    MAX_AI_CONTEXT_PRODUCTS,
+    MAX_EMBEDDING_PRODUCT_TEXT_LENGTH,
+} from "@utils/constants";
+import { WAREHOUSE_SYSTEM_PROMPT } from "@utils/aiPrompts";
 import {
     type WarehouseQueryResult,
     WarehouseCatalogQueryService,
@@ -16,7 +21,6 @@ import {
 
 
 const MAX_HISTORY_MESSAGES = 4;
-const MAX_CONTEXT_PRODUCTS = 25;
 const ENABLE_EMBEDDING_RETRIEVAL =
     import.meta.env.VITE_OLLAMA_EMBEDDINGS_ENABLED === "true";
 
@@ -25,11 +29,90 @@ interface ProductEmbedding {
     embedding: number[];
 }
 
+interface ProductEmbeddingInput {
+    productId: string;
+    input: string;
+    productSignature: string;
+}
+
+export const getBoundedEmbeddingInput = (input: string): string =>
+    input.slice(0, MAX_EMBEDDING_PRODUCT_TEXT_LENGTH);
+
+export const getProductEmbeddingFingerprint = (input: string): string =>
+    `${input.length}:${input}`;
+
+const FNV_OFFSET_BASIS = 0xcbf29ce484222325n;
+const FNV_PRIME = 0x100000001b3n;
+const FNV_HASH_WIDTH = 16;
+
+interface CatalogSignatureProduct {
+    id: string;
+    name: string | null;
+    description: string | null;
+    code: string | null;
+    externalCode: string | null;
+    article: string | null;
+    pathName: string | null;
+    stock: number | null;
+    salePriceValue: number | null;
+    salePriceCurrency: string | null;
+}
+
+const normalizeSignatureString = (value: unknown): string | null =>
+    typeof value === "string" ? value : null;
+
+const normalizeSignatureNumber = (value: unknown): number | null =>
+    typeof value === "number" && Number.isFinite(value) ? value : null;
+
+const getCatalogSignatureProduct = (
+    product: WarehouseProduct,
+): CatalogSignatureProduct => {
+    const [firstSalePrice] = product.salePrices ?? [];
+
+    return {
+        id: product.id,
+        name: normalizeSignatureString(product.name),
+        description: normalizeSignatureString(product.description),
+        code: normalizeSignatureString(product.code),
+        externalCode: normalizeSignatureString(product.externalCode),
+        article: normalizeSignatureString(product.article),
+        pathName: normalizeSignatureString(product.pathName),
+        stock: normalizeSignatureNumber(product.stock),
+        salePriceValue: normalizeSignatureNumber(firstSalePrice?.value),
+        salePriceCurrency: normalizeSignatureString(firstSalePrice?.currency),
+    };
+};
+
+const updateFnvHash = (hash: bigint, value: string): bigint => {
+    let nextHash = hash;
+
+    for (let index = 0; index < value.length; index += 1) {
+        nextHash ^= BigInt(value.charCodeAt(index));
+        nextHash = BigInt.asUintN(64, nextHash * FNV_PRIME);
+    }
+
+    return nextHash;
+};
+
+export const getProductsSignature = (products: WarehouseProduct[]): string => {
+    const serializedProducts = products
+        .map((product) => JSON.stringify(getCatalogSignatureProduct(product)))
+        .sort();
+    let hash = FNV_OFFSET_BASIS;
+
+    for (const serializedProduct of serializedProducts) {
+        hash = updateFnvHash(hash, String(serializedProduct.length));
+        hash = updateFnvHash(hash, serializedProduct);
+    }
+
+    return hash.toString(16).padStart(FNV_HASH_WIDTH, "0");
+};
+
 export class WarehouseAiContextService {
     private products: WarehouseProduct[] = [];
     private productsSignature = "";
     private productEmbeddings: ProductEmbedding[] = [];
-    private readonly qwenProductsService = new QwenProductsService();
+    private readonly productTextService = new ProductTextService();
     private readonly warehouseCatalogQueryService =
         new WarehouseCatalogQueryService();
     private readonly warehouseIdbStorageService =
@@ -39,7 +122,7 @@ export class WarehouseAiContextService {
     private sessionMessages: OllamaChatMessage[] = [];
 
     updateProducts = (products: WarehouseProduct[]): void => {
-        const nextSignature = this.getProductsSignature(products);
+        const nextSignature = getProductsSignature(products);
 
         if (nextSignature !== this.productsSignature) {
             this.productEmbeddings = [];
@@ -57,7 +140,7 @@ export class WarehouseAiContextService {
         return [...this.sessionMessages];
     };
 
-    ask = async (question: string): Promise<string> => {
+    ask = async (question: string, signal?: AbortSignal): Promise<string> => {
         const trimmedQuestion = question.trim();
 
         if (!trimmedQuestion) {
@@ -70,12 +153,15 @@ export class WarehouseAiContextService {
 
         const retrievalText = this.getRetrievalText(trimmedQuestion);
         const includeDetails =
-            this.qwenProductsService.shouldIncludeDetails(trimmedQuestion);
+            this.productTextService.shouldIncludeDetails(trimmedQuestion);
 
         const retrievalResult = await this.selectWarehouseContext(
             retrievalText,
             includeDetails,
+            signal,
         );
+
+        this.throwIfAborted(signal);
 
         if (
             retrievalResult.total === 0 &&
@@ -104,7 +190,9 @@ export class WarehouseAiContextService {
             retrievalResult.factsText,
             trimmedQuestion,
         );
-        const answer = await fetchOllamaChatApi(messages);
+        const answer = await fetchOllamaChatApi(messages, signal);
+
+        this.throwIfAborted(signal);
 
         this.sessionMessages = this.trimSessionMessages([
             ...this.sessionMessages,
@@ -168,8 +256,9 @@ ${warehouseFactsText}
     private selectWarehouseContext = async (
         retrievalText: string,
         includeDetails: boolean,
+        signal?: AbortSignal,
     ): Promise<WarehouseQueryResult> => {
-        const limit = Math.min(this.products.length, MAX_CONTEXT_PRODUCTS);
+        const limit = Math.min(this.products.length, MAX_AI_CONTEXT_PRODUCTS);
 
         const deterministicPlan =
             this.warehouseCatalogQueryService.detectDeterministicPlan(
@@ -187,7 +276,10 @@ ${warehouseFactsText}
             const retrievalPlan =
                 await this.warehouseRetrievalPlannerService.planRetrieval(
                     retrievalText,
+                    signal,
                 );
+
+            this.throwIfAborted(signal);
 
             if (retrievalPlan) {
                 const plannedResult =
@@ -213,10 +305,15 @@ ${warehouseFactsText}
                         plannedResult,
                         retrievalText,
                         limit,
+                        signal,
                     );
                 }
             }
         } catch (error) {
+            if (signal?.aborted) {
+                throw error;
+            }
+
             console.warn("Warehouse retrieval planner fallback:", error);
         }
 
@@ -239,6 +336,7 @@ ${warehouseFactsText}
             lexicalResult,
             retrievalText,
             limit,
+            signal,
         );
     };
 
@@ -246,6 +344,7 @@ ${warehouseFactsText}
         result: WarehouseQueryResult,
         retrievalText: string,
         limit: number,
+        signal?: AbortSignal,
     ): Promise<WarehouseQueryResult> => {
         if (
             result.kind !== "lookup" ||
@@ -259,6 +358,7 @@ ${warehouseFactsText}
             const embeddingProducts = await this.selectEmbeddingProducts(
                 retrievalText,
                 limit,
+                signal,
             );
             const mergedProducts = this.mergeProducts(
                 result.products,
@@ -279,13 +379,17 @@ name | stock | price | category${result.includeDescription ? " | bounded descrip
 
 ТОВАРЫ:
 
-${this.qwenProductsService.prepareCompactContext(
+${this.productTextService.prepareCompactContext(
     mergedProducts,
     result.includeDescription,
 )}
                 `.trim(),
             };
         } catch (error) {
+            if (signal?.aborted) {
+                throw error;
+            }
+
             console.warn("Ollama embedding retrieval fallback:", error);
 
             return result;
@@ -295,14 +399,22 @@ ${this.qwenProductsService.prepareCompactContext(
     private selectEmbeddingProducts = async (
         retrievalText: string,
         limit: number,
+        signal?: AbortSignal,
     ): Promise<WarehouseProduct[]> => {
-        await this.ensureProductEmbeddings();
+        await this.ensureProductEmbeddings(signal);
+
+        this.throwIfAborted(signal);
 
         if (this.productEmbeddings.length === 0) {
             return [];
         }
 
-        const [questionEmbedding] = await fetchOllamaEmbedApi([retrievalText]);
+        const [questionEmbedding] = await fetchOllamaEmbedApi(
+            [retrievalText],
+            signal,
+        );
+
+        this.throwIfAborted(signal);
 
         if (!questionEmbedding) {
             return [];
@@ -337,59 +449,114 @@ ${this.qwenProductsService.prepareCompactContext(
             .map(({ product }) => product);
     };
 
-    private ensureProductEmbeddings = async (): Promise<void> => {
-        if (this.productEmbeddings.length > 0) {
+    private ensureProductEmbeddings = async (
+        signal?: AbortSignal,
+    ): Promise<void> => {
+        if (this.productEmbeddings.length > 0 || this.products.length === 0) {
             return;
         }
 
+        const embeddingInputs = this.getProductEmbeddingInputs();
+        const embeddingsByProductId = new Map<string, ProductEmbedding>();
+
         try {
             const storedEmbeddings =
-                await this.warehouseIdbStorageService.getEmbeddings(
-                    this.productsSignature,
+                await this.warehouseIdbStorageService.getEmbeddingsByModel();
+
+            this.throwIfAborted(signal);
+
+            const storedEmbeddingsByProductId = new Map(
+                storedEmbeddings.map((record) => [record.productId, record]),
+            );
+
+            for (const input of embeddingInputs) {
+                const storedEmbedding = storedEmbeddingsByProductId.get(
+                    input.productId,
                 );
 
-            if (storedEmbeddings.length > 0) {
-                this.productEmbeddings = storedEmbeddings.map((record) => ({
-                    productId: record.productId,
-                    embedding: record.embedding,
-                }));
-                return;
+                if (
+                    storedEmbedding
+                    && storedEmbedding.productSignature === input.productSignature
+                ) {
+                    embeddingsByProductId.set(input.productId, {
+                        productId: input.productId,
+                        embedding: storedEmbedding.embedding,
+                    });
+                }
             }
         } catch (error) {
             console.warn("IndexedDB embedding load fallback:", error);
         }
 
-        const inputs = this.products.map((product) =>
-            this.qwenProductsService.getSearchableText(product),
+        const missingInputs = embeddingInputs.filter(
+            (input) => !embeddingsByProductId.has(input.productId),
         );
-        const embeddings = await fetchOllamaEmbedApi(inputs);
 
-        this.productEmbeddings = embeddings
-            .map((embedding, index) => {
-                const product = this.products[index];
-                if (!product) {
-                    return null;
-                }
+        for (
+            let batchStart = 0;
+            batchStart < missingInputs.length;
+            batchStart += EMBEDDING_BATCH_SIZE
+        ) {
+            this.throwIfAborted(signal);
 
-                return {
-                    productId: product.id,
-                    embedding,
-                };
-            })
-            .filter((item): item is ProductEmbedding => item !== null);
-
-        try {
-            await this.warehouseIdbStorageService.replaceEmbeddings(
-                this.productEmbeddings.map((record) => ({
-                    ...record,
-                    productSignature: this.productsSignature,
-                    model: OLLAMA_EMBEDDING_MODEL,
-                    updatedAt: Date.now(),
-                })),
+            const batch = missingInputs.slice(
+                batchStart,
+                batchStart + EMBEDDING_BATCH_SIZE,
             );
-        } catch (error) {
-            console.warn("IndexedDB embedding save fallback:", error);
+            const embeddings = await fetchOllamaEmbedApi(
+                batch.map((input) => input.input),
+                signal,
+            );
+
+            this.throwIfAborted(signal);
+
+            if (embeddings.length !== batch.length) {
+                throw new Error("Ollama returned an incomplete embedding batch");
+            }
+
+            const records = batch.map((input, index) => ({
+                productId: input.productId,
+                embedding: embeddings[index] as number[],
+                productSignature: input.productSignature,
+                model: OLLAMA_EMBEDDING_MODEL,
+                updatedAt: Date.now(),
+            }));
+
+            try {
+                await this.warehouseIdbStorageService.upsertEmbeddings(records);
+            } catch (error) {
+                console.warn("IndexedDB embedding save fallback:", error);
+            }
+
+            for (const record of records) {
+                embeddingsByProductId.set(record.productId, {
+                    productId: record.productId,
+                    embedding: record.embedding,
+                });
+            }
         }
+
+        if (embeddingsByProductId.size !== embeddingInputs.length) {
+            throw new Error("Product embedding refresh is incomplete");
+        }
+
+        this.productEmbeddings = embeddingInputs.map((input) =>
+            embeddingsByProductId.get(input.productId) as ProductEmbedding,
+        );
+    };
+
+    private getProductEmbeddingInputs = (): ProductEmbeddingInput[] => {
+        return this.products.map((product) => {
+            const input = getBoundedEmbeddingInput(
+                this.productTextService.getSearchableText(product),
+            );
+
+            return {
+                productId: product.id,
+                input,
+                productSignature: getProductEmbeddingFingerprint(input),
+            };
+        });
     };
 
     private mergeProducts = (
@@ -411,22 +578,10 @@ ${this.qwenProductsService.prepareCompactContext(
         return [...productsById.values()].slice(0, limit);
     };
 
-    private getProductsSignature = (products: WarehouseProduct[]): string => {
-        return products
-            .map((product) =>
-                [
-                    product.id,
-                    product.name,
-                    product.description,
-                    product.code,
-                    product.externalCode,
-                    product.article,
-                    product.pathName,
-                    product.stock,
-                    product.salePrices?.[0]?.value,
-                ].join(":"),
-            )
-            .join("|");
+    private throwIfAborted = (signal?: AbortSignal): void => {
+        if (signal?.aborted) {
+            throw new Error("Request aborted");
+        }
     };
 
     private getCosineSimilarity = (left: number[], right: number[]): number => {

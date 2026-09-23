@@ -2,7 +2,8 @@ import { type ConnectionTone } from "../../types";
 import { type ReactElement } from "react";
 import "./style.css";
 
-interface ISignalRailProps {
+interface SignalRailSignals {
+    sourceName: string;
     connectionLabel: string;
     connectionTone: ConnectionTone;
     catalogLabel: string;
@@ -10,13 +11,19 @@ interface ISignalRailProps {
     hasProducts: boolean;
 }
 
-const SignalRail = ({
-    connectionLabel,
-    connectionTone,
-    catalogLabel,
-    aiContextLabel,
-    hasProducts,
-}: ISignalRailProps): ReactElement => {
+interface ISignalRailProps {
+    signals: SignalRailSignals;
+}
+
+const SignalRail = ({ signals }: ISignalRailProps): ReactElement => {
+    const {
+        sourceName,
+        connectionLabel,
+        connectionTone,
+        catalogLabel,
+        aiContextLabel,
+        hasProducts,
+    } = signals;
     const aiContextTone = hasProducts ? "good" : "pending";
 
     return (
@@ -27,7 +34,7 @@ const SignalRail = ({
             </div>
             <div className="signal-grid">
                 <div className={`signal-cell signal-cell--${connectionTone}`}>
-                    <span className="signal-label">МойСклад</span>
+                    <span className="signal-label">{sourceName}</span>
                     <strong>{connectionLabel}</strong>
                 </div>
                 <div className="signal-cell">

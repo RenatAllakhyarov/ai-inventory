@@ -3,23 +3,15 @@ export const DEFAULT_CHAT_MODEL = "gemma3:4b";
 export const DEFAULT_EMBEDDING_MODEL = "nomic-embed-text";
 export const QWEN_CHAT_MODEL_ALTERNATIVE = "qwen3:4b";
 
-export const WAREHOUSE_SYSTEM_PROMPT = `
-Ты — помощник по складу.
-
-Отвечай только на основании переданных данных о товарах.
-
-Не придумывай товары.
-
-Не придумывай цены.
-
-Не придумывай остатки.
-
-Если данных недостаточно, прямо скажи об этом.
-
-Отвечай на русском языке.
-`.trim();
 
 export const DEFAULT_TOAST_DURATION_MS = 4200;
+export const WAREHOUSE_PAGE_LIMIT = 1000;
+export const SYNC_INTERVAL_MS = 5 * 60 * 1000;
+export const ERROR_TOAST_DURATION_MS = 6500;
+export const SUCCESS_TOAST_DURATION_MS = 3200;
+export const MAX_AI_CONTEXT_PRODUCTS = 25;
+export const EMBEDDING_BATCH_SIZE = 20;
+export const MAX_EMBEDDING_PRODUCT_TEXT_LENGTH = 2000;
 
 export const DATABASE_NAME = "ai_inventory_warehouse";
 export const DATABASE_VERSION = 3;

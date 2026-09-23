@@ -19,26 +19,4 @@ export interface ChatTimelineMessage {
     status?: ChatMessageStatus;
 }
 
-export interface WarehouseProductsResponse<TProduct> {
-    rows?: TProduct[];
-}
-
-export interface MoySkladStockRow {
-    stock?: number;
-    reserve?: number;
-    inTransit?: number;
-    quantity?: number;
-
-    assortment?: {
-        meta?: {
-            href?: string;
-        };
-        name?: string;
-    };
-}
-
-export interface MoySkladStockResponse {
-    rows?: MoySkladStockRow[];
-}
-
 export type ConnectionTone = "pending" | "good" | "danger";

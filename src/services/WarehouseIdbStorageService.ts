@@ -1,6 +1,10 @@
 import { type WarehouseProduct } from "./ProductsStorageService";
-import { QwenProductsService } from "./QwenProductsService";
+import { ProductTextService } from "./ProductTextService";
 import { OLLAMA_EMBEDDING_MODEL } from "@api/OllamaApi";
+import {
+    getProductPriceAmount,
+    getProductPriceCurrency,
+} from "@utils/functions/productMoney";
 import {
     BARCODES_STORE,
     CATEGORIES_STORE,
@@ -117,9 +121,12 @@ export interface WarehouseTermMatch {
 }
 
 export class WarehouseIdbStorageError extends Error {
-    constructor(message: string) {
+    readonly cause?: unknown;
+
+    constructor(message: string, cause?: unknown) {
         super(message);
         this.name = "WarehouseIdbStorageError";
+        this.cause = cause;
     }
 }
 
@@ -166,7 +173,7 @@ const createIndexIfMissing = (
 export class WarehouseIdbStorageService {
     private databasePromise?: Promise<IDBDatabase>;
 
-    private readonly qwenProductsService = new QwenProductsService();
+    private readonly productTextService = new ProductTextService();
 
     open = async (): Promise<IDBDatabase> => {
         if (!("indexedDB" in window)) {
@@ -256,7 +263,7 @@ export class WarehouseIdbStorageService {
         query: string,
         fields?: WarehouseSearchField[],
     ): Promise<WarehouseTermMatch[]> => {
-        const tokens = this.qwenProductsService.getSearchTokens(query);
+        const tokens = this.productTextService.getSearchTokens(query);
 
         if (tokens.length === 0) {
             return [];
@@ -347,6 +354,18 @@ export class WarehouseIdbStorageService {
             "readwrite",
         );
 
+        const abortOnWriteFailure = <TValue>(
+            request: IDBRequest<TValue>,
+        ): void => {
+            request.onerror = () => {
+                try {
+                    transaction.abort();
+                } catch {
+                    // The browser may already be aborting the transaction.
+                }
+            };
+        };
+
         for (const storeName of [
             PRODUCTS_STORE,
             INDEXED_PRODUCTS_STORE,
@@ -358,7 +377,7 @@ export class WarehouseIdbStorageService {
             BARCODES_STORE,
             SEARCH_TERMS_STORE,
         ]) {
-            transaction.objectStore(storeName).clear();
+            abortOnWriteFailure(transaction.objectStore(storeName).clear());
         }
 
         const putAll = <TRecord>(
@@ -367,7 +386,7 @@ export class WarehouseIdbStorageService {
         ): void => {
             const store = transaction.objectStore(storeName);
             for (const record of records) {
-                store.put(record);
+                abortOnWriteFailure(store.put(record));
             }
         };
 
@@ -384,25 +403,32 @@ export class WarehouseIdbStorageService {
         const now = Date.now();
         const metaStore = transaction.objectStore(META_STORE);
 
-        metaStore.put({
+        abortOnWriteFailure(metaStore.put({
             name: "lastProductSyncAt",
             value: now,
             updatedAt: now,
-        } satisfies WarehouseMetaRecord);
+        } satisfies WarehouseMetaRecord));
 
-        metaStore.put({
+        abortOnWriteFailure(metaStore.put({
             name: "productSignature",
             value: this.getProductsSignature(products),
             updatedAt: now,
-        } satisfies WarehouseMetaRecord);
+        } satisfies WarehouseMetaRecord));
 
-        metaStore.put({
+        abortOnWriteFailure(metaStore.put({
             name: "categoriesCount",
             value: indexedCatalog.categories.length,
             updatedAt: now,
-        } satisfies WarehouseMetaRecord);
+        } satisfies WarehouseMetaRecord));
 
-        await transactionToPromise(transaction);
+        try {
+            await transactionToPromise(transaction);
+        } catch (cause) {
+            throw new WarehouseIdbStorageError(
+                "Не удалось заменить каталог IndexedDB",
+                cause,
+            );
+        }
     };
 
     getIndexedCatalogSnapshot =
@@ -471,23 +497,18 @@ export class WarehouseIdbStorageService {
         await transactionToPromise(transaction);
     };
 
-    getEmbeddings = async (
-        productSignature: string,
+    getEmbeddingsByModel = async (
+        model = OLLAMA_EMBEDDING_MODEL,
     ): Promise<WarehouseEmbeddingRecord[]> => {
         const database = await this.open();
         const transaction = database.transaction(EMBEDDINGS_STORE, "readonly");
         const store = transaction.objectStore(EMBEDDINGS_STORE);
 
-        if (store.indexNames.contains("signatureModel")) {
+        if (store.indexNames.contains("model")) {
             return requestToPromise(
                 store
-                    .index("signatureModel")
-                    .getAll(
-                        IDBKeyRange.only([
-                            productSignature,
-                            OLLAMA_EMBEDDING_MODEL,
-                        ]),
-                    ),
+                    .index("model")
+                    .getAll(IDBKeyRange.only(model)),
             ) as Promise<WarehouseEmbeddingRecord[]>;
         }
 
@@ -495,11 +516,25 @@ export class WarehouseIdbStorageService {
             store.getAll(),
         )) as WarehouseEmbeddingRecord[];
 
-        return records.filter(
-            (record) =>
-                record.productSignature === productSignature &&
-                record.model === OLLAMA_EMBEDDING_MODEL,
-        );
+        return records.filter((record) => record.model === model);
+    };
+
+    upsertEmbeddings = async (
+        records: WarehouseEmbeddingRecord[],
+    ): Promise<void> => {
+        if (records.length === 0) {
+            return;
+        }
+
+        const database = await this.open();
+        const transaction = database.transaction(EMBEDDINGS_STORE, "readwrite");
+        const store = transaction.objectStore(EMBEDDINGS_STORE);
+
+        for (const record of records) {
+            store.put(record);
+        }
+
+        await transactionToPromise(transaction);
     };
 
     replaceEmbeddings = async (
@@ -539,7 +574,7 @@ export class WarehouseIdbStorageService {
             const descriptionText = product.description?.trim() ?? "";
             const descriptionId = descriptionText ? product.id : undefined;
             const stock = this.getNumericStock(product);
-            const price = this.getNumericPrice(product);
+            const price = getProductPriceAmount(product);
 
             indexedProducts.push({
                 id: product.id,
@@ -557,8 +592,8 @@ export class WarehouseIdbStorageService {
                     id: nameId,
                     original: name,
                     normalized:
-                        this.qwenProductsService.normalizeSearchText(name),
-                    tokens: this.qwenProductsService.getSearchTokens(name),
+                        this.productTextService.normalizeSearchText(name),
+                    tokens: this.productTextService.getSearchTokens(name),
                 });
             }
 
@@ -566,7 +601,7 @@ export class WarehouseIdbStorageService {
             prices.push({
                 productId: product.id,
                 price,
-                currency: "RUB",
+                currency: getProductPriceCurrency(product),
             });
 
             if (descriptionId) {
@@ -574,10 +609,10 @@ export class WarehouseIdbStorageService {
                     id: descriptionId,
                     boundedText: this.boundDescription(descriptionText),
                     normalized:
-                        this.qwenProductsService.normalizeSearchText(
+                        this.productTextService.normalizeSearchText(
                             descriptionText,
                         ),
-                    tokens: this.qwenProductsService.getSearchTokens(
+                    tokens: this.productTextService.getSearchTokens(
                         descriptionText,
                     ),
                 });
@@ -590,7 +625,7 @@ export class WarehouseIdbStorageService {
                     path: categoryPath,
                     parentId: this.getParentCategoryId(categoryPath),
                     normalizedPath:
-                        this.qwenProductsService.normalizeSearchText(
+                        this.productTextService.normalizeSearchText(
                             categoryPath,
                         ),
                     productCount: 0,
@@ -761,7 +796,7 @@ export class WarehouseIdbStorageService {
 
         for (const item of weightedFields) {
             const terms = new Set(
-                this.qwenProductsService.getSearchTokens(item.value ?? ""),
+                this.productTextService.getSearchTokens(item.value ?? ""),
             );
 
             for (const term of terms) {
@@ -789,16 +824,6 @@ export class WarehouseIdbStorageService {
         return typeof product.stock === "number" ? product.stock : undefined;
     };
 
-    private getNumericPrice = (
-        product: WarehouseProduct,
-    ): number | undefined => {
-        const [firstSalePrice] = product.salePrices ?? [];
-
-        return typeof firstSalePrice?.value === "number"
-            ? firstSalePrice.value / 100
-            : undefined;
-    };
-
     private getCategoryName = (categoryPath: string): string => {
         const parts = categoryPath
             .split("/")
@@ -824,7 +849,7 @@ export class WarehouseIdbStorageService {
     };
 
     private createEntityId = (value: string): string => {
-        return this.qwenProductsService.normalizeSearchText(value) || "unknown";
+        return this.productTextService.normalizeSearchText(value) || "unknown";
     };
 
     private boundDescription = (value: string): string => {
@@ -850,6 +875,7 @@ export class WarehouseIdbStorageService {
                     product.pathName,
                     product.stock,
                     product.salePrices?.[0]?.value,
+                    product.salePrices?.[0]?.currency,
                 ].join(":"),
             )
             .join("|");
